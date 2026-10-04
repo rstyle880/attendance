@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Time Attendance Kiosk</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='8'%20fill='%2316a34a'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='9.5'%20fill='none'%20stroke='%23fff'%20stroke-width='2.4'/%3E%3Cpath%20d='M16%2010.5V16l3.8%202.4'%20fill='none'%20stroke='%23fff'%20stroke-width='2.4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E"> <!-- FAVICON: inline, no extra download -->
+<!--
+  kiosk.html v2 — MP Holdings Time Attendance Kiosk (Saipan Vegas | Club 88)
+
+  OPTIONAL IMAGES: put these files in the SAME folder as kiosk.html and they
+  are used automatically (if a file is missing, a styled text version shows):
+    kiosk-bg.jpg            background photo (e.g. the resort at night), 1920x1080 or larger
+    logo-saipan-vegas.png   Saipan Vegas Resort logo (transparent PNG works best)
+    logo-club88.png         Club 88 logo
+  Each kiosk shows ONLY its own venue's logo (from the kiosk's registered venue):
+  VEN-SV -> Saipan Vegas, VEN-C88 -> Club 88. Not set up yet -> both.
+
+  Admin setup: press and hold the gear icon (bottom right) for 3 seconds.
+
+  Everything from v1 is kept: terminal secret, PIN lockout, offline queue,
+  voice ("Thank you" / "Please try again"), missed clock-out warning, BREAK,
+  keep-warm ping. New: My Records, and Announcements shown right on the home
+  screen as a slideshow (auto-advances; ‹ › or swipe; tap to read in full;
+  "View all" lists them; pinned first; refreshed every 5 minutes).
+-->
+<style>
+  :root {
+    --glass: rgba(12, 24, 52, .72); --glass-2: rgba(20, 38, 78, .78);
+    --line: rgba(160, 190, 255, .28); --txt: #eef3ff; --muted: #a9b8d9;
+    --green: #16a34a; --red: #dc2626; --blue: #2563eb;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: manipulation;
+      -webkit-touch-callout: none; -webkit-user-drag: none; } /* NOMENU: no long-press Share / Print / Copy menu on tablets */
+  input, textarea, .setup, .setup * { -webkit-touch-callout: default; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: var(--txt); overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(4, 10, 28, .45) 0%, rgba(4, 10, 28, .55) 40%, rgba(4, 10, 28, .85) 100%),
+      url('kiosk-bg.jpg') center / cover no-repeat,
+      radial-gradient(60% 50% at 12% 40%, rgba(255, 170, 60, .22) 0%, transparent 70%),
+      radial-gradient(55% 50% at 90% 45%, rgba(255, 40, 80, .20) 0%, transparent 70%),
+      radial-gradient(70% 60% at 50% 0%, #1d3f86 0%, #0b1a3d 55%, #060d22 100%);
+    background-color: #060d22;
+  }
+  .stage { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: safe center;
+    padding: 1.6vh 3vw 5.5vh; gap: 1.6vh; overflow-y: auto; }
+
+  /* ---- brand ---- */
+  .brand { display: flex; align-items: center; gap: clamp(18px, 3vw, 44px); }
+  .brand .logo { display: flex; align-items: center; justify-content: center; height: clamp(70px, 13vh, 140px); }
+  .brand .logo img { max-height: 100%; max-width: clamp(160px, 22vw, 320px); display: none; }
+  .brand .logo.has-img img { display: block; }
+  .brand .logo.has-img .fb { display: none; }
+  /* One venue per kiosk: only that venue's logo, a bit larger */
+  .brand.only-sv #logoC88, .brand.only-sv .sep, .brand.only-c88 #logoSV, .brand.only-c88 .sep { display: none; }
+  .brand.only-sv .logo, .brand.only-c88 .logo { height: clamp(80px, 13vh, 150px); }
+  .brand.only-sv .fb-sv .name { font-size: clamp(28px, 3.4vw, 52px); }
+  .brand.only-c88 .fb-c88 .num { font-size: clamp(70px, 9vw, 130px); }
+  .brand .sep { width: 2px; height: clamp(60px, 11vh, 120px); background: rgba(255, 255, 255, .55); }
+  .fb-sv { text-align: center; }
+  .fb-sv .crown { display: block; margin: 0 auto 4px; width: clamp(56px, 5vw, 92px); height: auto; }
+  .fb-sv .name { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(22px, 2.6vw, 40px); letter-spacing: 1px; color: #fff; line-height: 1; }
+  .fb-sv .resort { font-size: clamp(11px, 1.1vw, 17px); letter-spacing: .45em; color: #e8b64c; margin-top: 6px; }
+  .fb-sv .resort::before, .fb-sv .resort::after { content: '—'; letter-spacing: 0; margin: 0 .4em; opacity: .8; }
+  .fb-c88 { text-align: center; line-height: 1; }
+  .fb-c88 .num { font-size: clamp(54px, 7vw, 104px); font-weight: 900; color: #ff2d2d; letter-spacing: -2px;
+    text-shadow: 0 0 6px #ffcf5a, 0 0 18px rgba(255, 60, 60, .8); -webkit-text-stroke: 2px #ffd36a; }
+  .fb-c88 .lbl { font-size: clamp(18px, 1.9vw, 30px); font-weight: 800; color: #fff; margin-top: 2px; }
+
+  /* ---- clock ---- */
+  .clock { text-align: center; }
+  .clock .t { font-size: min(clamp(44px, 6.4vw, 100px), 10.5vh); font-weight: 800; letter-spacing: 1px; font-variant-numeric: tabular-nums;
+    line-height: 1; text-shadow: 0 4px 24px rgba(0, 0, 0, .45); }
+  .clock .d { font-size: clamp(16px, 1.7vw, 26px); margin-top: .8vh; color: #fff; }
+  .clock .z { font-size: clamp(12px, 1.1vw, 17px); color: var(--muted); margin-top: .5vh; }
+
+  /* ---- big buttons ---- */
+  .big { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 1.4vw, 22px); width: min(1100px, 94vw); }
+  .bbtn { border: none; border-radius: 18px; color: #fff; cursor: pointer; font-family: inherit; min-height: clamp(100px, 16.5vh, 190px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.6vh;
+    font-size: clamp(20px, 2.2vw, 34px); font-weight: 800; letter-spacing: .5px; position: relative; overflow: hidden;
+    transition: transform .08s, filter .15s; }
+  .bbtn::after { content: ''; position: absolute; inset: 0; border-radius: 18px; border: 2px solid rgba(255, 255, 255, .35); pointer-events: none; }
+  .bbtn:active { transform: scale(.97); filter: brightness(1.12); }
+  .bbtn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  .bbtn svg { width: clamp(48px, 5vw, 80px); height: auto; }
+  .bbtn.in { background: linear-gradient(180deg, #22c55e 0%, #15803d 100%); box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 24px rgba(34,197,94,.35); }
+  .bbtn.out { background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%); box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 24px rgba(239,68,68,.35); }
+  .bbtn.brk { background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%); box-shadow: 0 10px 30px rgba(0,0,0,.35), 0 0 24px rgba(245,158,11,.35); }
+
+  /* ---- info bar ---- */
+  .info { width: min(1100px, 94vw); display: flex; align-items: center; gap: 22px; padding: 14px 26px; border-radius: 16px;
+    background: var(--glass); border: 1px solid var(--line); backdrop-filter: blur(6px); }
+  .info svg { flex: none; }
+  .info .tx b { display: block; font-size: clamp(15px, 1.5vw, 22px); letter-spacing: .5px; }
+  .info .tx span { color: var(--muted); font-size: clamp(13px, 1.2vw, 18px); }
+  .info .dv { width: 1px; align-self: stretch; background: var(--line); margin-left: auto; }
+  .info .dots { display: flex; gap: 14px; padding: 14px 26px; border-radius: 12px; background: rgba(60, 100, 180, .35); border: 1px solid var(--line); }
+  .info .dots i { width: 14px; height: 14px; border-radius: 50%; background: #9ec2ff; display: block; }
+
+  /* ---- bottom row: announcements (always visible) + my records ---- */
+  .bottom { display: grid; grid-template-columns: 1fr; /* My Records removed: announcements use the full width */ gap: clamp(12px, 1.4vw, 22px); width: min(1100px, 94vw); }
+  .ann { border-radius: 16px; background: var(--glass); border: 1px solid rgba(90, 150, 255, .55); overflow: hidden;
+    backdrop-filter: blur(6px); display: flex; flex-direction: column; box-shadow: 0 0 18px rgba(37, 99, 235, .25); }
+  .ann-head { display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: linear-gradient(90deg, #1d4ed8, #1e3a8a); }
+  .ann-head b { font-size: clamp(15px, 1.5vw, 22px); letter-spacing: .5px; }
+  .ann-head span { margin-left: auto; font-weight: 700; font-size: clamp(13px, 1.2vw, 18px); }
+  .ann-list { max-height: clamp(150px, 22vh, 250px); overflow-y: auto; }
+  /* ---- ON BREAK bar (inside the Announcements panel, only when someone is on break) ---- */
+  .onbreak { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: rgba(245, 158, 11, .12);
+    border-bottom: 1px solid rgba(245, 158, 11, .35); overflow: hidden; }
+  .onbreak .lbl { font-weight: 800; font-size: clamp(12px, 1.1vw, 16px); color: #fcd34d; white-space: nowrap; letter-spacing: .5px; }
+  .onbreak .chips { display: flex; gap: 8px; overflow: hidden; flex: 1; min-width: 0; }
+  .bchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: clamp(12px, 1.1vw, 16px);
+    font-weight: 700; white-space: nowrap; background: rgba(34, 197, 94, .18); color: #bbf7d0; border: 1px solid rgba(34, 197, 94, .45); }
+  .bchip .t { font-variant-numeric: tabular-nums; font-weight: 800; }
+  .bchip.low { background: rgba(245, 158, 11, .2); color: #fde68a; border-color: rgba(245, 158, 11, .6); }
+  .bchip.over { background: rgba(239, 68, 68, .22); color: #fecaca; border-color: rgba(239, 68, 68, .6); }
+  .bchip.paused { background: rgba(148, 163, 184, .18); color: #e2e8f0; border-color: rgba(148, 163, 184, .5); }
+  .onbreak .more { color: var(--muted); font-weight: 700; font-size: 14px; white-space: nowrap; }
+
+  /* ---- break choice screen ---- */
+  .brk-name { text-align: center; font-size: 24px; font-weight: 800; margin: 4px 0 2px; }
+  .brk-state { text-align: center; color: var(--muted); font-size: 16px; }
+  .brk-time { text-align: center; font-size: 56px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 10px 0 2px; }
+  .brk-time.over { color: #f87171; } .brk-time.low { color: #fbbf24; }
+  .brk-sub { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+  .brk-opts { display: grid; gap: 12px; }
+  .bopt { border: none; border-radius: 14px; padding: 20px; font: inherit; font-size: 22px; font-weight: 800; color: #fff; cursor: pointer; }
+  .bopt .ic { display: inline-block; width: 22px; height: 22px; vertical-align: -3px; margin-right: 10px; }
+  .bopt small { display: block; font-size: 14px; font-weight: 600; opacity: .9; margin-top: 4px; }
+  .bopt.start { background: linear-gradient(180deg, #22c55e, #15803d); }
+  .bopt.pause { background: linear-gradient(180deg, #fbbf24, #d97706); }
+  .bopt.end { background: linear-gradient(180deg, #ef4444, #b91c1c); }
+  .bopt:active { filter: brightness(1.1); }
+
+  /* ---- announcement slideshow ---- */
+  .ann-all { margin-left: auto; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); color: #fff;
+    border-radius: 999px; padding: 6px 14px; font: inherit; font-weight: 700; font-size: clamp(12px, 1.1vw, 16px); cursor: pointer; }
+  .ann-all:active { background: rgba(255,255,255,.25); }
+  .ann-head .ann-date { margin-left: 14px; }
+  .ann-all.hidden + .ann-date { margin-left: auto; }
+  .onbreak:not(.hidden) + .slides { height: calc(clamp(160px, 21vh, 250px) - 42px); }
+  .slides { position: relative; height: clamp(160px, 21vh, 250px); overflow: hidden; touch-action: pan-y; }
+  .slide { position: absolute; inset: 0; display: flex; gap: 16px; align-items: flex-start; padding: 14px 64px 34px; cursor: pointer;
+    opacity: 0; transform: translateX(24px); transition: opacity .45s ease, transform .45s ease; pointer-events: none; }
+  .slide.on { opacity: 1; transform: none; pointer-events: auto; }
+  .slide.off-left { opacity: 0; transform: translateX(-24px); }
+  .slide .big-ic { width: clamp(44px, 4vw, 60px); height: clamp(44px, 4vw, 60px); border-radius: 12px; display: grid; place-items: center; flex: none; }
+  .slide .txt { min-width: 0; flex: 1; }
+  .slide .tt { font-size: clamp(17px, 1.8vw, 27px); font-weight: 800; line-height: 1.2;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .slide .pin { display: inline-block; font-size: 11px; font-weight: 800; color: #fcd34d; background: rgba(245,158,11,.18);
+    border: 1px solid rgba(245,158,11,.5); padding: 1px 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
+  .slide .bd { margin-top: 6px; color: #d7e2fb; font-size: clamp(13px, 1.25vw, 18px); line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+  .slide .mt { margin-top: 6px; color: var(--muted); font-size: clamp(11px, 1vw, 14px); }
+  .slide .mt b { color: #9ec2ff; font-weight: 700; }
+  .nav-btn { position: absolute; top: 50%; transform: translateY(-60%); width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line);
+    background: rgba(8, 18, 42, .7); color: #fff; font-size: 28px; line-height: 1; cursor: pointer; z-index: 2; display: grid; place-items: center; padding: 0 0 4px; }
+  .nav-btn:active { background: rgba(37, 99, 235, .6); }
+  .nav-btn.prev { left: 10px; } .nav-btn.next { right: 10px; }
+  .sdots { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; z-index: 2; }
+  .sdots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.3); display: block; transition: background .3s, transform .3s; }
+  .sdots i.on { background: #fff; transform: scale(1.25); }
+  .sdots span { margin-left: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .progress { position: absolute; left: 0; bottom: 0; height: 3px; background: #60a5fa; width: 0; z-index: 2; }
+  @media (prefers-reduced-motion: reduce) { .slide, .slide.off-left { transition: none; transform: none; } .progress { display: none; } }
+  .ann-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 18px; background: none; border: none;
+    border-bottom: 1px solid rgba(160, 190, 255, .14); color: #fff; font-family: inherit; text-align: left; cursor: pointer; }
+  .ann-item:last-child { border-bottom: none; }
+  .ann-item:active { background: rgba(255, 255, 255, .06); }
+  .ann-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: none; }
+  .ann-item .tt { flex: 1; min-width: 0; font-size: clamp(14px, 1.3vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ann-item .dt { color: var(--muted); font-size: clamp(11px, 1vw, 15px); white-space: nowrap; }
+  .ann-empty { color: var(--muted); padding: 22px 18px; text-align: center; }
+  .rec-card { border-radius: 16px; background: var(--glass); border: 1px solid var(--line); color: #fff; cursor: pointer; font-family: inherit;
+    text-align: left; padding: 18px 20px; display: flex; flex-direction: column; backdrop-filter: blur(6px); position: relative; overflow: hidden; }
+  .rec-card:active { background: var(--glass-2); }
+  .rec-card .top { display: flex; align-items: center; gap: 14px; }
+  .rec-card .ic { width: 52px; height: 52px; border-radius: 50%; background: #1d4ed8; display: grid; place-items: center; flex: none; }
+  .rec-card b { display: block; font-size: clamp(16px, 1.6vw, 24px); letter-spacing: .5px; }
+  .rec-card small { color: var(--muted); font-size: clamp(12px, 1.1vw, 16px); }
+  .rec-card .chev { margin-left: auto; font-size: 30px; color: #cfe0ff; }
+  .rec-card .art { margin-top: auto; align-self: center; opacity: .9; }
+
+  /* ---- small buttons (no longer used on the home screen) ---- */
+  .small { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 1.4vw, 22px); width: min(1100px, 94vw); }
+  .sbtn { border-radius: 16px; background: var(--glass); border: 1px solid var(--line); color: #fff; cursor: pointer; font-family: inherit;
+    padding: 2vh 10px; display: flex; flex-direction: column; align-items: center; gap: 1vh; font-weight: 800;
+    font-size: clamp(13px, 1.25vw, 19px); letter-spacing: .5px; backdrop-filter: blur(6px); }
+  .sbtn:active { background: var(--glass-2); }
+  .sbtn svg { width: clamp(28px, 2.6vw, 40px); height: auto; }
+
+  /* ---- footer ---- */
+  .foot { position: fixed; right: 2vw; bottom: 2vh; display: flex; align-items: center; gap: 12px; color: #d6e1f7; font-size: 14px; }
+  .foot .gear { width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; border-radius: 50%; }
+  .foot .gear:active { background: rgba(255, 255, 255, .08); }
+  .foot small { display: block; color: var(--muted); }
+  .status { position: fixed; left: 2vw; bottom: 2vh; font-size: 13px; color: var(--muted); max-width: 55vw; }
+  .status.warn { color: #ffd166; }
+
+  /* ---- flow panel ---- */
+  .overlay { position: fixed; inset: 0; background: rgba(3, 8, 22, .72); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; padding: 2vh 2vw; z-index: 10; }
+  .panel { width: min(520px, 94vw); max-height: 96vh; overflow-y: auto; background: linear-gradient(180deg, #13244b, #0d1a38);
+    border: 1px solid var(--line); border-radius: 22px; padding: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .55); }
+  .panel.wide { width: min(900px, 96vw); }
+  .ph { text-align: center; margin-bottom: 12px; }
+  .pill { display: inline-block; padding: 6px 18px; border-radius: 999px; font-weight: 800; font-size: 14px; color: #fff; margin-bottom: 10px; }
+  .pill.in { background: var(--green); } .pill.out { background: var(--red); } .pill.brk { background: #d97706; } .pill.rec { background: var(--blue); }
+  .ph h2 { margin: 0; font-size: 22px; font-weight: 700; }
+  .display { background: #081229; border-radius: 12px; padding: 18px; text-align: center; font-size: 36px; letter-spacing: 14px;
+    margin: 14px 0; min-height: 40px; font-weight: 700; border: 1px solid var(--line); }
+  .display .placeholder { color: #4a5d86; letter-spacing: normal; font-size: 17px; font-weight: 500; }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .key { padding: 22px 0; border: none; border-radius: 14px; background: #22386a; color: #fff; font-size: 28px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .key:active { background: #2e4a8a; }
+  .key.clear { background: #43212f; color: #ff9a8f; font-size: 18px; }
+  .key.enter { background: #135c32; color: #b7f5cd; font-size: 18px; }
+  .keypad.disabled .key { opacity: .35; pointer-events: none; }
+  .msg { text-align: center; margin-top: 12px; font-size: 15px; min-height: 20px; }
+  .msg.err { color: #ff9a8f; } .msg.info { color: var(--muted); }
+  .cancel { text-align: center; margin-top: 12px; }
+  .cancel button, .btn-ghost { background: none; border: 1px solid var(--line); color: #cfe0ff; font-size: 16px; cursor: pointer; padding: 12px 26px; border-radius: 12px; font-family: inherit; }
+  .spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result { text-align: center; padding: 14px 0 4px; }
+  .result .icon { font-size: 64px; line-height: 1; margin-bottom: 8px; }
+  .result.in .icon { color: #4ade80; } .result.out .icon { color: #f87171; } .result.brk .icon { color: #fbbf24; }
+  .result.offline .icon { color: #ffd166; } .result.error .icon { color: #ff9a8f; }
+  .result .title { font-size: 26px; font-weight: 800; }
+  .result .name { font-size: 22px; font-weight: 700; margin: 6px 0; color: #dfe8ff; }
+  .result .detail { font-size: 16px; color: var(--muted); line-height: 1.45; }
+  .result button { margin-top: 18px; }
+
+  .rec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rec-head h2 { margin: 0; font-size: 24px; }
+  .rec-head .sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .state { padding: 6px 14px; border-radius: 999px; font-weight: 700; font-size: 14px; }
+  .state.IN { background: rgba(34, 197, 94, .2); color: #86efac; } .state.OUT { background: rgba(255, 255, 255, .1); color: #cbd5e1; }
+  .state.BREAK { background: rgba(245, 158, 11, .2); color: #fcd34d; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid rgba(160, 190, 255, .12); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.tot td { font-weight: 800; background: rgba(37, 99, 235, .18); }
+  tr.wk td { font-weight: 700; color: #cfe0ff; background: rgba(255, 255, 255, .04); }
+  .flag { color: #ff9a8f; font-weight: 700; }
+  .panel-actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
+
+  .clist { display: flex; flex-direction: column; gap: 10px; }
+  .citem { text-align: left; background: rgba(255, 255, 255, .05); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; color: #fff; cursor: pointer; font-family: inherit; }
+  .citem b { display: block; font-size: 18px; }
+  .citem span { color: var(--muted); font-size: 13px; }
+  .cbody { white-space: pre-wrap; font-size: 18px; line-height: 1.55; color: #e6edff; user-select: text; }
+  .empty { text-align: center; color: var(--muted); padding: 22px; }
+
+  .hidden { display: none !important; }
+
+  .warn-box { width: min(560px, 94vw); background: #fff; border-radius: 20px; overflow: hidden; text-align: center; color: #1a1a1a; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .warn-head { background: #c62828; color: #fff; padding: 22px 20px; }
+  .warn-head .icon { font-size: 60px; line-height: 1; }
+  .warn-head h2 { margin: 8px 0 0; font-size: 28px; }
+  .warn-body { padding: 22px 26px 8px; }
+  .warn-body .who { font-size: 26px; font-weight: 800; }
+  .warn-body .done { margin-top: 6px; font-size: 17px; color: #1e7e34; font-weight: 700; }
+  .warn-body .text { margin-top: 14px; font-size: 19px; line-height: 1.45; }
+  .warn-foot { padding: 18px 26px 26px; }
+  .warn-foot button { width: 100%; padding: 18px; border: none; border-radius: 14px; background: #14213d; color: #fff; font-size: 20px; font-weight: 700; cursor: pointer; }
+
+  .setup { background: #fff; color: #1a1a1a; border-radius: 14px; padding: 22px; width: min(460px, 94vw); user-select: text; }
+  .setup * { user-select: text; }
+  .setup h3 { margin: 0 0 4px; } .setup p { margin: 0 0 12px; font-size: 13px; color: #555; }
+  .setup label { display: block; font-size: 12px; color: #555; margin-top: 10px; }
+  .setup input { width: 100%; padding: 9px; margin-top: 4px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  .setup .btns { display: flex; gap: 8px; margin-top: 16px; }
+  .setup .btns button { flex: 1; padding: 11px; border-radius: 8px; border: none; font-size: 14px; cursor: pointer; }
+  .setup .save { background: #14213d; color: #fff; } .setup .close { background: #e5e7eb; }
+  .setup .save.loading { opacity: .8; pointer-events: none; }
+  .setup .result-line { margin-top: 10px; font-size: 13px; white-space: pre-wrap; }
+  .setup .result-line.ok { color: #1e7e34; } .setup .result-line.err { color: #b3261e; }
+  .setup .queue { margin-top: 12px; font-size: 12px; color: #555; background: #f4f5f7; border-radius: 6px; padding: 8px; max-height: 120px; overflow: auto; white-space: pre-wrap; }
+
+  @media (max-height: 700px) { .info { display: none; } }
+  @media (max-width: 700px) {
+    .bottom { grid-template-columns: 1fr; }
+    .big { grid-template-columns: 1fr; } .bbtn { min-height: 90px; flex-direction: row; }
+    .info .dv, .info .dots { display: none; }
+    .stage { justify-content: flex-start; overflow-y: auto; }
+  }
+  @media (orientation: portrait) and (min-width: 701px) {
+    .clock .t { font-size: 11vw; } .clock .d { font-size: 3.2vw; } .clock .z { font-size: 2.2vw; }
+    .big, .info, .small { width: 92vw; }
+    .bbtn { min-height: 17vh; font-size: 4.2vw; } .bbtn svg { width: 9vw; }
+    .bottom { width: 92vw; grid-template-columns: 1fr; } .ann-list { max-height: 26vh; } .slides { height: 22vh; }
+    .slide .tt { font-size: 3.4vw; } .slide .bd { font-size: 2.5vw; }
+    .ann-item .tt { font-size: 2.6vw; } .rec-card b { font-size: 3.2vw; }
+    .info .tx b { font-size: 2.8vw; } .info .tx span { font-size: 2.2vw; }
+    .brand .logo { height: 12vh; } .fb-sv .name { font-size: 5vw; } .fb-c88 .num { font-size: 11vw; } .fb-c88 .lbl { font-size: 3.4vw; }
+  }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+</style>
+</head>
+<body>
+
+<main class="stage">
+  <header class="brand" id="brand">
+    <div class="logo" id="logoSV">
+      <img src="logo-saipan-vegas.png" alt="Saipan Vegas Resort" onload="this.parentNode.classList.add('has-img')">
+      <div class="fb fb-sv">
+        <svg class="crown" viewBox="0 0 92 52" fill="none" stroke="#e8b64c" stroke-width="3" stroke-linejoin="round">
+          <path d="M8 44 4 14l20 16L46 4l22 26 20-16-4 30z" fill="rgba(232,182,76,.18)"/><path d="M10 48h72"/>
+        </svg>
+        <div class="name">SAIPAN VEGAS</div>
+        <div class="resort">RESORT</div>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="logo" id="logoC88">
+      <img src="logo-club88.png" alt="Club 88" onload="this.parentNode.classList.add('has-img')">
+      <div class="fb fb-c88"><div class="num">88</div><div class="lbl">CLUB 88</div></div>
+    </div>
+  </header>
+
+  <div class="clock">
+    <div class="t" id="clock">--:--</div>
+    <div class="d" id="date"></div>
+    <div class="z">Saipan/Guam (UTC+10)</div>
+  </div>
+
+  <div class="big">
+    <button class="bbtn in" onclick="startEntry('IN')">
+      <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M26 8h12v32H26"/><path d="M6 24h22M20 16l8 8-8 8"/></svg>
+      CLOCK IN</button>
+    <button class="bbtn out" onclick="startEntry('OUT')">
+      <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 8H10v32h12"/><path d="M42 24H20M28 16l-8 8 8 8"/></svg>
+      CLOCK OUT</button>
+    <button class="bbtn brk" onclick="startEntry('BREAK')">
+      <svg viewBox="0 0 48 48" fill="#fff"><path d="M8 20h28v8a12 12 0 0 1-12 12h-4A12 12 0 0 1 8 28z"/><path d="M36 22h3a6 6 0 0 1 0 12h-3v-4h3a2 2 0 0 0 0-4h-3z"/><path d="M15 6c-2 3 2 5 0 8M22 6c-2 3 2 5 0 8M29 6c-2 3 2 5 0 8" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/></svg>
+      BREAK</button>
+  </div>
+
+  <div class="info">
+    <svg width="64" height="48" viewBox="0 0 64 48" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="4" width="58" height="40" rx="6"/><path d="M12 30h10M12 22h14"/><path d="M40 30a8 8 0 0 1 12 0M36 26a14 14 0 0 1 20 0M46 34h.01" stroke-linecap="round"/></svg>
+    <div class="tx"><b>ENTER YOUR EMPLOYEE ID AND PIN</b><span>Tap Clock In, Clock Out or Break to start</span></div>
+    <div class="dv"></div>
+    <div class="dots"><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="bottom">
+    <section class="ann" aria-label="Announcements">
+      <div class="ann-head">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1zM14 8.5a4.5 4.5 0 0 1 0 7M16.5 6a8 8 0 0 1 0 12" stroke="#fff" stroke-width="2" fill-rule="evenodd"/></svg>
+        <b>ANNOUNCEMENTS</b>
+        <button class="ann-all hidden" id="annAll" onclick="openAllAnnouncements()">View all</button>
+        <span class="ann-date" id="annToday"></span>
+      </div>
+      <div class="onbreak hidden" id="onBreakBar" aria-live="polite">
+        <span class="lbl">☕ ON BREAK</span><div class="chips" id="onBreakChips"></div><span class="more" id="onBreakMore"></span>
+      </div>
+      <div class="slides" id="annSlides" aria-live="polite"><div class="ann-empty">Loading…</div></div>
+    </section>
+  </div>
+</main>
+
+<div class="status" id="statusBar"></div>
+<div class="foot">
+  <div class="gear" id="gear" title="Admin setup (press and hold)">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="#d6e1f7"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.3 7.3 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.3 7.3 0 0 0-1.7 1l-2.5-1-2 3.5L4.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.3 7.3 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+  </div>
+  <div>Time Attendance System<small id="footVenue">Version 2.0</small></div>
+</div>
+
+<!-- ============ FLOW PANEL ============ -->
+<div class="overlay hidden" id="flow">
+  <div class="panel" id="panel">
+    <div id="screenEmpId" class="hidden">
+      <div class="ph"><span class="pill" id="pillEmpId"></span><h2>Enter Employee ID</h2></div>
+      <div class="display" id="displayEmpId"></div>
+      <div class="keypad" id="keypadEmpId"></div>
+      <div class="msg err" id="msgEmpId"></div>
+      <div class="cancel"><button onclick="resetKiosk()">Cancel</button></div>
+    </div>
+    <div id="screenPin" class="hidden">
+      <div class="ph"><span class="pill" id="pillPin"></span><h2>Enter PIN</h2></div>
+      <div class="display" id="displayPin"></div>
+      <div class="keypad" id="keypadPin"></div>
+      <div class="msg" id="msgPin"></div>
+      <div class="cancel"><button onclick="resetKiosk()">Cancel</button></div>
+    </div>
+    <div id="screenResult" class="hidden">
+      <div class="result" id="resultBox">
+        <div class="icon" id="resultIcon"></div>
+        <div class="title" id="resultTitle"></div>
+        <div class="name" id="resultName"></div>
+        <div class="detail" id="resultDetail"></div>
+        <button class="btn-ghost hidden" id="resultBtn" onclick="resetKiosk()">OK</button>
+      </div>
+    </div>
+    <div id="screenNoIn" class="hidden">
+      <div class="ph"><span class="pill out">CLOCK OUT</span></div>
+      <div class="result error" style="padding-top:4px"><div class="icon">⚠</div></div>
+      <div class="brk-name" style="font-size:22px">No clock-in found</div>
+      <div class="brk-state" id="noInMsg" style="margin:6px 0 4px;color:#e6edff"></div>
+      <div class="brk-sub">Record CLOCK OUT anyway? Your manager will be notified to add your clock-in time.</div>
+      <div class="brk-opts">
+        <button class="bopt end" id="noInYes" onclick="confirmNoIn(true)">Yes, clock out<small>I started work without clocking in</small></button>
+        <button class="bopt start" onclick="confirmNoIn(false)">No — I meant CLOCK IN<small>Record my clock-in now instead</small></button>
+      </div>
+      <div class="msg" id="noInStatus"></div>
+      <div class="cancel"><button onclick="resetKiosk()">Cancel</button></div>
+    </div>
+    <div id="screenBreak" class="hidden">
+      <div class="ph"><span class="pill brk">BREAK</span></div>
+      <div class="brk-name" id="brkName"></div>
+      <div class="brk-state" id="brkState"></div>
+      <div class="brk-time" id="brkTime"></div>
+      <div class="brk-sub" id="brkSub"></div>
+      <div class="brk-opts" id="brkOpts"></div>
+      <div class="msg" id="brkMsg"></div>
+      <div class="cancel"><button onclick="resetKiosk()">Cancel</button></div>
+    </div>
+    <div id="screenRecords" class="hidden">
+      <div class="rec-head">
+        <div><h2 id="recName"></h2><div class="sub" id="recPeriod"></div></div>
+        <span class="state" id="recState"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table><thead><tr><th>Day</th><th>In</th><th>Out</th><th class="num">Break</th><th class="num">Hours</th></tr></thead>
+          <tbody id="recBody"></tbody></table>
+      </div>
+      <div class="panel-actions"><button class="btn-ghost" onclick="resetKiosk()">Done</button></div>
+    </div>
+    <div id="screenContent" class="hidden">
+      <div class="ph"><span class="pill rec" id="contentPill"></span><h2 id="contentTitle"></h2></div>
+      <div id="contentBody"></div>
+      <div class="panel-actions">
+        <button class="btn-ghost hidden" id="contentBack" onclick="showContentList()">Back</button>
+        <button class="btn-ghost" onclick="resetKiosk()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MISSED CLOCK-OUT WARNING ============ -->
+<div class="overlay hidden" id="warnOverlay" role="alertdialog" aria-modal="true" aria-labelledby="warnTitle" style="z-index:15">
+  <div class="warn-box">
+    <div class="warn-head"><div class="icon">⚠</div><h2 id="warnTitle">Missed clock-out</h2></div>
+    <div class="warn-body"><div class="who" id="warnWho"></div><div class="done" id="warnDone"></div><div class="text" id="warnText"></div></div>
+    <div class="warn-foot"><button onclick="closeWarning()">OK, I understand</button></div>
+  </div>
+</div>
+
+<!-- ============ ADMIN SETUP ============ -->
+<div class="overlay hidden" id="setupOverlay" style="z-index:20">
+  <div class="setup">
+    <h3>Kiosk Setup (Admin)</h3>
+    <p>Register the kiosk in the Admin portal first, then copy its Terminal ID and one-time secret here.</p>
+    <label>Web App URL</label><input id="setupUrl" placeholder="https://script.google.com/macros/s/XXXX/exec" autocomplete="off">
+    <label>Terminal ID</label><input id="setupTermId" placeholder="TERM-..." autocomplete="off">
+    <label>Terminal Secret</label><input id="setupSecret" type="password" placeholder="Leave blank to keep the current secret" autocomplete="off">
+    <div class="btns">
+      <button class="save" id="setupSaveBtn" onclick="testAndSaveSetup()">Test &amp; Save</button>
+      <button class="close" onclick="closeSetup()">Close</button>
+    </div>
+    <div class="result-line" id="setupResult"></div>
+    <div class="queue" id="setupQueue"></div>
+    <div class="queue" id="setupCamera" style="margin-top:8px"></div>
+    <button type="button" id="setupCamRetry" class="hidden" onclick="retryCamera()" style="margin-top:6px">Try camera again</button>
+    <button class="close hidden" id="setupReviewed" style="margin-top:8px;width:100%;padding:10px;border-radius:8px;border:none;background:#fde68a;color:#78350f;font-weight:700;cursor:pointer"
+      onclick="markRejectedReviewed()">Mark rejected punches as reviewed (clear list)</button>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// Config (stored on THIS kiosk PC only)
+// ============================================================================
+const TZ = 'Pacific/Saipan';
+const LS = {
+  url: 'kiosk_apiUrl', termId: 'kiosk_terminalId', secret: 'kiosk_terminalSecret',
+  venueName: 'kiosk_venueName', venueId: 'kiosk_venueId', queue: 'kiosk_offlineQueue', rejected: 'kiosk_rejectedPunches'
+};
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function getConfig() { return { url: lsGet(LS.url, ''), terminalId: lsGet(LS.termId, ''), secret: lsGet(LS.secret, '') }; }
+function isConfigured() { const c = getConfig(); return !!(c.url && c.terminalId && c.secret); }
+const $ = function (id) { return document.getElementById(id); };
+
+// ============================================================================
+// Clock (always Saipan time)
+// ============================================================================
+// AUDIT2 B1: the kiosk shows SERVER time. The PC clock may be wrong; the
+// difference is measured on every ping and saved, so it also works offline.
+let clockOffset = parseInt(lsGet('kiosk_clockOffset', '0'), 10) || 0;
+function nowMs() { return Date.now() + clockOffset; }
+function tickClock() {
+  const now = new Date(nowMs());
+  $('clock').textContent = now.toLocaleTimeString('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  $('date').textContent = now.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+setInterval(tickClock, 1000); tickClock();
+function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) : ''; }
+function saipanDay(iso) { return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(iso)); }
+function hm(h) { const m = Math.round((h || 0) * 60); return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }
+function shortDate(d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric' }); }
+
+// ============================================================================
+// Sound: voice + alarm (built into the browser, no internet needed)
+// ============================================================================
+function speak(text) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = 0.95; u.volume = 1;
+    const v = window.speechSynthesis.getVoices().find(function (x) { return /^en[-_]US/i.test(x.lang); });
+    if (v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+if ('speechSynthesis' in window) { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = function () { window.speechSynthesis.getVoices(); }; }
+const SAY_OK = 'Thank you', SAY_ERR = 'Please try again';
+
+let audioCtx = null;
+
+// ============================================================================
+// SOUND: short keypad click for every button press (separate from the voice and
+// the alarm, which stay exactly as they were). One central function, one
+// listener for the whole kiosk -> exactly one click per press. ON by default;
+// the choice is kept on this kiosk (localStorage). Audio only starts after a
+// touch (Android / browser autoplay rules) — nothing plays when the page loads.
+// ============================================================================
+// KSOUND: ON / OFF is set per kiosk in Admin → Kiosks (source of truth) and
+// arrives with every home refresh. The last value from the server is kept only
+// so the kiosk behaves the same while offline. Employees cannot change it here.
+let buttonSoundOn = lsGet('kiosk_serverButtonSound', 'ON') !== 'OFF';
+function applyServerButtonSound(v) {
+  if (v !== 'ON' && v !== 'OFF') return;
+  buttonSoundOn = v === 'ON';
+  lsSet('kiosk_serverButtonSound', v);
+}
+let lastClickAt = 0;
+function ensureAudio() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  } catch (e) { return null; }
+}
+function playButtonPressSound() {
+  if (!buttonSoundOn) return;
+  const now = Date.now();
+  if (now - lastClickAt < 40) return; // one press = one click
+  lastClickAt = now;
+  const ctx = ensureAudio(); if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1500, t);
+    osc.frequency.exponentialRampToValueAtTime(900, t + 0.035);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.09, t + 0.004); // soft, quick attack
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.06);
+  } catch (e) {}
+}
+// One listener for every clickable thing on the kiosk (keypad, CLEAR, ENTER, Cancel,
+// CLOCK IN / OUT / BREAK, break choices, announcements, setup buttons, ...)
+document.addEventListener('pointerdown', function (ev) {
+  const t = ev.target.closest('button, .slide, [role="button"]');
+  if (!t || t.disabled) return;
+  if (t.closest('.keypad.disabled')) return;
+  playButtonPressSound();
+}, { capture: true, passive: true });
+
+function playAlarm() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime + 0.05;
+    for (let round = 0; round < 2; round++) for (let i = 0; i < 3; i++) {
+      const start = t0 + round * 1.3 + i * 0.32;
+      [880, 1175].forEach(function (freq, k) {
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'square'; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, start + k * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.25, start + k * 0.12 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + k * 0.12 + 0.11);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(start + k * 0.12); osc.stop(start + k * 0.12 + 0.12);
+      });
+    }
+  } catch (e) {}
+}
+
+// ============================================================================
+// API
+// ============================================================================
+class NetworkError extends Error {}
+async function api(action, payload, timeoutMs) {
+  const c = getConfig();
+  let res;
+  const ctl = (typeof AbortController !== 'undefined' && timeoutMs) ? new AbortController() : null;
+  const timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null; // KHOME: never hang forever
+  try {
+    res = await fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight
+      body: JSON.stringify({ action: action, payload: payload }), signal: ctl ? ctl.signal : undefined });
+  } catch (e) { throw new NetworkError(ctl && ctl.signal.aborted ? 'timeout' : 'offline'); }
+  finally { if (timer) clearTimeout(timer); }
+  if (!res.ok) throw new NetworkError('HTTP ' + res.status);
+  try { return await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
+}
+
+// ============================================================================
+// State + idle timeout
+// ============================================================================
+let mode = null;            // 'IN' | 'OUT' | 'BREAK' | 'RECORDS'
+let employeeId = '', pin = '', busy = false, idleTimer = null, resultTimer = null;
+
+function resetIdleTimer(ms) { clearTimeout(idleTimer); idleTimer = setTimeout(resetKiosk, ms || 30000); }
+function currentIdle() { return (!$('screenRecords').classList.contains('hidden') || !$('screenContent').classList.contains('hidden')) ? 60000 : 30000; }
+['touchstart', 'click'].forEach(function (ev) {
+  document.addEventListener(ev, function () { if (!$('flow').classList.contains('hidden')) resetIdleTimer(currentIdle()); }, { passive: true });
+});
+
+const SCREENS = ['screenEmpId', 'screenPin', 'screenResult', 'screenNoIn', 'screenBreak', 'screenRecords', 'screenContent'];
+function showScreen(id, wide) {
+  $('flow').classList.remove('hidden');
+  $('panel').classList.toggle('wide', !!wide);
+  SCREENS.forEach(function (s) { $(s).classList.toggle('hidden', s !== id); });
+}
+function resetKiosk() {
+  clearTimeout(resultTimer); clearTimeout(idleTimer);
+  mode = null; employeeId = ''; pin = ''; busy = false;
+  breakPin = ''; noInPin = ''; clearInterval(brkTick);
+  $('flow').classList.add('hidden');
+  if (typeof scheduleNext === 'function' && slideItems.length > 1) { slidePauseUntil = Date.now() + 3000; scheduleNext(); }
+}
+
+function buildKeypad(containerId, onDigit, onClear, onEnter) {
+  const el = $(containerId); el.innerHTML = ''; el.classList.remove('disabled');
+  function add(label, cls, fn) { const b = document.createElement('button'); b.className = 'key' + (cls ? ' ' + cls : ''); b.textContent = label; b.onclick = fn; el.appendChild(b); }
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9'].forEach(function (d) { add(d, '', function () { onDigit(d); }); });
+  add('CLEAR', 'clear', onClear); add('0', '', function () { onDigit('0'); }); add('ENTER', 'enter', onEnter);
+}
+function pillFor(id) {
+  const labels = { IN: 'CLOCK IN', OUT: 'CLOCK OUT', BREAK: 'BREAK', RECORDS: 'MY RECORDS' };
+  const cls = { IN: 'in', OUT: 'out', BREAK: 'brk', RECORDS: 'rec' };
+  $(id).textContent = labels[mode]; $(id).className = 'pill ' + cls[mode];
+}
+
+// ============================================================================
+// Flow: ID -> PIN -> action
+// ============================================================================
+function startEntry(m) {
+  if (!isConfigured()) { speak(SAY_ERR); showResult('error', '⚠', 'Kiosk not set up', '', 'Please ask an Admin to set up this kiosk.', true); return; }
+  mode = m; employeeId = '';
+  pillFor('pillEmpId'); renderEmpId(); $('msgEmpId').textContent = '';
+  buildKeypad('keypadEmpId',
+    function (d) { if (employeeId.length < 4) { employeeId += d; renderEmpId(); if (employeeId.length === 4) submitEmpId(); } },
+    function () { employeeId = ''; renderEmpId(); }, submitEmpId);
+  showScreen('screenEmpId'); resetIdleTimer();
+}
+function renderEmpId() { $('displayEmpId').innerHTML = employeeId ? employeeId.split('').join(' ') : '<span class="placeholder">4-digit ID</span>'; }
+function submitEmpId() {
+  if (employeeId.length !== 4) { $('msgEmpId').textContent = 'Employee ID must be 4 digits.'; return; }
+  // The ID is not checked separately — that would reveal which IDs exist.
+  pin = ''; pillFor('pillPin'); renderPin(); setPinMsg('', '');
+  buildPinPad(); showScreen('screenPin');
+}
+function buildPinPad() {
+  buildKeypad('keypadPin',
+    function (d) { if (busy) return; if (pin.length < 4) { pin += d; renderPin(); if (pin.length === 4) submitPin(); } },
+    function () { if (busy) return; pin = ''; renderPin(); }, submitPin);
+}
+function renderPin() { $('displayPin').innerHTML = pin ? pin.split('').map(function () { return '•'; }).join(' ') : '<span class="placeholder">4-digit PIN</span>'; }
+function setPinMsg(t, c) { $('msgPin').textContent = t; $('msgPin').className = 'msg ' + (c || ''); }
+
+async function submitPin() {
+  if (busy) return;
+  if (pin.length !== 4) { setPinMsg('PIN must be 4 digits.', 'err'); return; }
+  busy = true; $('keypadPin').classList.add('disabled');
+  $('msgPin').className = 'msg info';
+  $('msgPin').innerHTML = '<span class="spinner"></span>' + (mode === 'RECORDS' ? 'Loading your records…' : 'Processing…');
+  const c = getConfig();
+  const body = { employeeId: employeeId, pin: pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
+  // AUTOBREAK: BREAK starts the break in ONE request; only if already on break /
+  // paused does the server send back the choices (Pause / Resume / End)
+  const action = { IN: 'clockIn', OUT: 'clockOut', BREAK: 'kioskBreakAction', RECORDS: 'kioskMyRecords' }[mode];
+  if (mode === 'BREAK') body.op = 'AUTO';
+  const photo = (mode === 'IN' || mode === 'OUT') ? capturePhoto() : null; // PHOTO: one frame, before the request
+  try {
+    const result = await api(action, body);
+    if (!result.ok && mode === 'BREAK' && result.error && /Unknown break action/i.test(result.error.message || '')) {
+      delete body.op; // older server: use the two-step way
+      const st = await api('kioskBreakStatus', body);
+      if (st.ok) { breakPin = body.pin; showBreakChoices(st.data); } else handleError(st.error);
+      return;
+    }
+    if (!result.ok && result.error && result.error.code === 'NO_CLOCK_IN_CONFIRM') { noInPin = body.pin; showNoInConfirm(result.error.message); }
+    else if (!result.ok) handleError(result.error);
+    else if (mode === 'RECORDS') showRecords(result.data);
+    else if (mode === 'BREAK' && result.data.needChoice) { breakPin = body.pin; showBreakChoices(result.data); }
+    else if (mode === 'BREAK') { showBreakResult(result.data); refreshOnBreak(); }
+    else { showSuccess(result.data); queuePhoto(photo, result.data && result.data.rawId, null); } // PHOTO: sent after, in the background
+  } catch (e) {
+    if (e instanceof NetworkError && (mode === 'IN' || mode === 'OUT')) {
+      const localId = queueOffline(body, mode); queuePhoto(photo, null, localId); speak(SAY_OK);
+      showResult('offline', '⏳', 'Saved on this kiosk', 'Employee ' + employeeId,
+        'No internet right now. Your CLOCK ' + mode + ' at ' + fmtTime(new Date(nowMs()).toISOString()) + ' is saved and will be sent automatically.', false);
+    } else if (e instanceof NetworkError) {
+      speak(SAY_ERR);
+      showResult('error', '⚠', 'No internet', '', mode === 'BREAK'
+        ? 'Break needs an internet connection. Please try again in a moment, or tell your manager the time.'
+        : 'Your records need an internet connection. Please try again in a moment.', true);
+    } else {
+      speak(SAY_ERR); showResult('error', '✕', 'Something went wrong', '', 'Please try again or tell your manager.', true);
+    }
+  } finally { busy = false; pin = ''; }
+}
+
+function handleError(err) {
+  const code = err && err.code, msg = (err && err.message) || 'Please try again.';
+  speak(code === 'DUPLICATE' ? SAY_OK : SAY_ERR);
+  if (code === 'INVALID_LOGIN') { buildPinPad(); pin = ''; renderPin(); setPinMsg(msg + ' Check your Employee ID and PIN.', 'err'); return; }
+  const titles = { ALREADY_IN: 'Already clocked IN', NOT_IN: 'Not clocked IN', DUPLICATE: 'Already recorded', PIN_LOCKED: 'Temporarily locked',
+    INACTIVE: 'Account inactive', TERMINAL_INVALID: 'Kiosk not authorized', ON_BREAK: 'You are on break', BREAK_AUTO: 'Break is automatic',
+    BREAK_NONE: 'No break to record', NOT_ON_BREAK: 'Not on break', ALREADY_ON_BREAK: 'Already on break' };
+  showResult('error', code === 'DUPLICATE' ? '✓' : '⚠', titles[code] || 'Could not complete', '', msg, true);
+}
+
+// ============================================================================
+// CLOCK OUT with no clock-in: ask first (catches pressing OUT instead of IN)
+// ============================================================================
+let noInPin = '';
+function showNoInConfirm(msg) {
+  speak('No clock in found');
+  $('noInMsg').textContent = msg;
+  $('noInStatus').textContent = '';
+  $('screenNoIn').querySelectorAll('button').forEach(function (b) { b.disabled = false; b.style.opacity = ''; });
+  showScreen('screenNoIn'); resetIdleTimer(30000);
+}
+async function confirmNoIn(yes) {
+  if (busy || !noInPin) return;
+  busy = true;
+  $('screenNoIn').querySelectorAll('.bopt').forEach(function (b) { b.disabled = true; b.style.opacity = '.5'; });
+  $('noInStatus').className = 'msg info'; $('noInStatus').innerHTML = '<span class="spinner"></span>Processing…';
+  const c = getConfig();
+  const body = { employeeId: employeeId, pin: noInPin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
+  if (yes) body.confirmNoIn = true;
+  const photo = capturePhoto(); // PHOTO
+  try {
+    const r = await api(yes ? 'clockOut' : 'clockIn', body);
+    if (!r.ok) handleError(r.error); else { showSuccess(r.data); queuePhoto(photo, r.data && r.data.rawId, null); }
+  } catch (e) {
+    speak(SAY_ERR);
+    showResult('error', '⚠', 'No internet', '', 'Please try again in a moment, or tell your manager the time.', true);
+  } finally { busy = false; noInPin = ''; }
+}
+
+// ============================================================================
+// BREAK: choose Start / Pause / Resume / End, with the time left
+// ============================================================================
+let breakPin = '', brkTick = null;
+function fmtLeft(sec) {
+  const a = Math.abs(Math.round(sec)), m = Math.floor(a / 60), s2 = String(a % 60).padStart(2, '0');
+  return m + ':' + s2;
+}
+function showBreakChoices(d) {
+  $('brkName').textContent = d.name;
+  const states = { ON: 'Clocked in — break not started', BREAK: 'On break', PAUSED: 'Break paused (you are back at work)' };
+  $('brkState').textContent = states[d.state] || '';
+  const t0 = Date.now();
+  const paint = function () {
+    const left = d.state === 'BREAK' ? d.remainingSec - (Date.now() - t0) / 1000 : d.remainingSec;
+    const el = $('brkTime');
+    el.textContent = (left < 0 ? '+' : '') + fmtLeft(left);
+    el.className = 'brk-time' + (left < 0 ? ' over' : left <= 300 ? ' low' : '');
+    $('brkSub').textContent = left < 0 ? 'over your ' + d.requiredMin + '-minute break'
+      : (d.state === 'ON' ? d.requiredMin + '-minute break' : 'left of your ' + d.requiredMin + '-minute break') +
+        (d.pauses ? ' · paused ' + d.pauses + '×' : '');
+  };
+  paint(); clearInterval(brkTick); brkTick = setInterval(paint, 1000);
+  const box = $('brkOpts'); box.innerHTML = '';
+  const ICON = { // drawn icons (emoji glyphs are not on every kiosk PC)
+    play: '<svg class="ic" viewBox="0 0 24 24" fill="#fff"><path d="M7 4l13 8-13 8z"/></svg>',
+    pause: '<svg class="ic" viewBox="0 0 24 24" fill="#fff"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>',
+    stop: '<svg class="ic" viewBox="0 0 24 24" fill="#fff"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>'
+  };
+  const defs = {
+    START: ['start', 'play', 'Start break', ''],
+    RESUME: ['start', 'play', 'Resume break', 'Continue with the time left'],
+    PAUSE: ['pause', 'pause', 'Pause — emergency', 'Stops your break clock. Resume when you are done.'],
+    END: ['end', 'stop', 'End break', d.state === 'PAUSED' ? 'Finish your break now' : 'Back to work']
+  };
+  d.options.forEach(function (op) {
+    const def = defs[op];
+    const b = document.createElement('button'); b.className = 'bopt ' + def[0];
+    b.insertAdjacentHTML('beforeend', ICON[def[1]]);
+    def.splice(1, 1);
+    b.appendChild(document.createTextNode(def[1]));
+    if (def[2]) { const sm = document.createElement('small'); sm.textContent = def[2]; b.appendChild(sm); }
+    b.onclick = function () { doBreak(op); };
+    box.appendChild(b);
+  });
+  $('brkMsg').textContent = ''; $('brkMsg').className = 'msg';
+  showScreen('screenBreak'); resetIdleTimer(30000);
+}
+async function doBreak(op) {
+  if (busy || !breakPin) return;
+  busy = true;
+  $('brkOpts').querySelectorAll('button').forEach(function (b) { b.disabled = true; b.style.opacity = '.5'; });
+  $('brkMsg').className = 'msg info'; $('brkMsg').innerHTML = '<span class="spinner"></span>Processing…';
+  const c = getConfig();
+  try {
+    const r = await api('kioskBreakAction', { op: op, employeeId: employeeId, pin: breakPin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret });
+    clearInterval(brkTick);
+    if (!r.ok) handleError(r.error); else showBreakResult(r.data);
+    refreshOnBreak();
+  } catch (e) {
+    clearInterval(brkTick); speak(SAY_ERR);
+    showResult('error', '⚠', 'No internet', '', 'Break needs an internet connection. Please try again in a moment, or tell your manager the time.', true);
+  } finally { busy = false; breakPin = ''; }
+}
+function showBreakResult(data) {
+  speak(SAY_OK);
+  const bi = data.breakInfo || {};
+  const name = data.employeeName || ('Employee ' + data.employeeId);
+  if (bi.op === 'START' || bi.op === 'RESUME') {
+    showResult('brk', '☕', bi.op === 'RESUME' ? 'Break resumed' : 'Break started', name,
+      'Your break ends at ' + fmtTime(bi.endsAt) + ' (' + fmtLeft(bi.remainingSec) + ' left). Enjoy your break!', false);
+  } else if (bi.op === 'PAUSE') {
+    showResult('brk', '☕', 'Break paused', name,
+      fmtLeft(Math.max(0, bi.remainingSec)) + ' of your break is saved. When you are done, tap BREAK → Resume break.', false);
+  } else {
+    const over = bi.remainingSec < 0 ? ' — ' + fmtLeft(bi.remainingSec) + ' over your ' + bi.requiredMin + '-minute break' : '';
+    showResult('brk', '✓', 'Break ended', name, 'Total break today: ' + Math.round(bi.usedMin) + ' min' + over + '. Welcome back!', false);
+  }
+}
+
+// ============================================================================
+// ON BREAK bar: who is on break at THIS venue (from the server), live countdown
+// ============================================================================
+let onBreakItems = [], onBreakAt = 0;
+async function refreshOnBreak() { return refreshHome(); } // KHOME: one request for the whole home screen
+async function refreshOnBreakLegacy() {
+  if (!isConfigured()) return;
+  const c = getConfig();
+  try {
+    const r = await api('kioskOnBreak', { terminalId: c.terminalId, terminalSecret: c.secret });
+    if (r.ok) { onBreakItems = r.data.items || []; onBreakAt = Date.now(); paintOnBreak(true); }
+  } catch (e) { /* keep the last list while offline */ }
+}
+function paintOnBreak(layoutChanged) {
+  const bar = $('onBreakBar'), chips = $('onBreakChips');
+  const wasHidden = bar.classList.contains('hidden');
+  if (!onBreakItems.length) { bar.classList.add('hidden'); if (!wasHidden) fitSlides(); return; }
+  bar.classList.remove('hidden');
+  chips.innerHTML = '';
+  const elapsed = (Date.now() - onBreakAt) / 1000;
+  onBreakItems.forEach(function (it) {
+    const left = it.state === 'BREAK' ? it.remainingSec - elapsed : it.remainingSec;
+    const ch = document.createElement('span');
+    ch.className = 'bchip' + (it.state === 'PAUSED' ? ' paused' : left < 0 ? ' over' : left <= 300 ? ' low' : '');
+    const n = document.createElement('span'); n.textContent = it.name;
+    const t = document.createElement('span'); t.className = 't';
+    t.textContent = left < 0 ? fmtLeft(left) + ' over' : fmtLeft(left) + (it.state === 'PAUSED' ? ' paused' : ' left');
+    ch.appendChild(n); ch.appendChild(t); chips.appendChild(ch);
+  });
+  // "+N" for chips that do not fit
+  requestAnimationFrame(function () {
+    const kids = chips.children; let hidden = 0;
+    const right = chips.getBoundingClientRect().right;
+    for (let i = 0; i < kids.length; i++) {
+      const out = kids[i].getBoundingClientRect().right > right + 1;
+      kids[i].style.visibility = out ? 'hidden' : ''; if (out) hidden++;
+    }
+    $('onBreakMore').textContent = hidden ? '+' + hidden : '';
+  });
+  if (wasHidden || layoutChanged) fitSlides();
+}
+setInterval(function () { if (onBreakItems.length) paintOnBreak(false); }, 1000);
+// (on-break list is refreshed by refreshHome every minute)
+
+function showSuccess(data) {
+  if (data.alert) { showWarning(data); return; }
+  speak(SAY_OK);
+  const d = data.direction;
+  const cls = d === 'IN' ? 'in' : (d === 'OUT' ? 'out' : 'brk');
+  const title = d === 'BREAK_START' ? 'Break started' : d === 'BREAK_END' ? 'Break ended' : 'Clocked ' + d;
+  let detail = fmtTime(data.originalTimestamp) + ' — Employee ' + data.employeeId;
+  if (d === 'BREAK_END' && data.breakMinutes !== undefined) detail = 'Break: ' + data.breakMinutes + ' min. ' + detail;
+  if (d === 'OUT' && data.autoEndedBreak) detail = 'Your break was ended automatically (' + data.breakMinutes + ' min). ' + detail;
+  showResult(cls, '✓', title, data.employeeName || ('Employee ' + data.employeeId), detail, false);
+  if (d === 'OUT') refreshOnBreak();
+}
+function showResult(cls, icon, title, name, detail, needsTap) {
+  clearTimeout(resultTimer);
+  $('resultBox').className = 'result ' + cls;
+  $('resultIcon').textContent = icon; $('resultTitle').textContent = title;
+  $('resultName').textContent = name; $('resultDetail').textContent = detail;
+  $('resultBtn').classList.toggle('hidden', !needsTap);
+  showScreen('screenResult');
+  resultTimer = setTimeout(resetKiosk, needsTap ? 10000 : 3500);
+}
+
+// ---- missed clock-out warning ----
+let warnTimer = null;
+function showWarning(data) {
+  const a = data.alert;
+  $('warnTitle').textContent = a.type === 'LONG_SHIFT' ? 'Very long shift' : a.type === 'NO_CLOCK_IN' ? 'No clock-in found' : 'Missed clock-out';
+  $('warnWho').textContent = data.employeeName || ('Employee ' + data.employeeId);
+  $('warnDone').textContent = '✓ Clocked ' + data.direction + ' at ' + fmtTime(data.originalTimestamp);
+  $('warnText').textContent = a.message;
+  $('flow').classList.add('hidden');
+  $('warnOverlay').classList.remove('hidden');
+  playAlarm(); setTimeout(function () { speak('Thank you. Please see your manager.'); }, 2700);
+  clearTimeout(warnTimer); warnTimer = setTimeout(closeWarning, 20000);
+}
+function closeWarning() { clearTimeout(warnTimer); $('warnOverlay').classList.add('hidden'); resetKiosk(); }
+
+// ============================================================================
+// My Records (own punches + hours for the current pay period)
+// ============================================================================
+function showRecords(d) {
+  $('recName').textContent = d.name;
+  $('recPeriod').textContent = 'Pay period ' + shortDate(d.periodStart) + ' – ' + shortDate(d.periodEnd) + ' (hours after breaks)';
+  const st = $('recState'); st.className = 'state ' + d.status;
+  st.textContent = d.status === 'IN' ? 'Clocked in since ' + fmtTime(d.since) : d.status === 'BREAK' ? 'On break' : 'Clocked out';
+  const tb = $('recBody'); tb.innerHTML = '';
+  const add = function (cells, cls) {
+    const tr = document.createElement('tr'); if (cls) tr.className = cls;
+    cells.forEach(function (c, i) { const td = document.createElement('td'); td.textContent = c; if (i >= 3) td.className = 'num'; tr.appendChild(td); });
+    tb.appendChild(tr); return tr;
+  };
+  if (!d.rows.length) {
+    const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.className = 'empty';
+    td.textContent = 'No punches yet in this pay period.'; tr.appendChild(td); tb.appendChild(tr);
+  }
+  const weeks = {}; (d.weeks || []).forEach(function (w) { weeks[w.weekStart] = w; });
+  let wk = 0, currentWeek = null;
+  function addWeek(ws) { wk++; const w = weeks[ws] || { total: 0 }; add(['Week ' + wk + ' total', '', '', '', hm(w.total)], 'wk'); }
+  d.rows.forEach(function (r) {
+    const ws = weekOf(r.date);
+    if (currentWeek && ws !== currentWeek) addWeek(currentWeek);
+    currentWeek = ws;
+    let outTxt = r.timeOut ? fmtTime(r.timeOut) : '';
+    if (r.timeOut && r.timeIn && saipanDay(r.timeOut) !== saipanDay(r.timeIn)) outTxt += ' (+1)';
+    const flag = r.flag === 'MISSING_OUT' ? 'No clock-out' : r.flag === 'MISSING_IN' ? 'No clock-in' : r.flag === 'OPEN' ? 'Working' : '';
+    const tr = add([r.weekday + ' ' + shortDate(r.date), r.timeIn ? fmtTime(r.timeIn) : '—', (flag && !r.timeOut) ? flag : outTxt,
+      r.breakMinutes ? r.breakMinutes + ' min' : '', r.flag ? '' : hm(r.hours)]);
+    if (r.flag === 'MISSING_OUT' || r.flag === 'MISSING_IN') tr.children[2].className = 'flag';
+  });
+  if (currentWeek) addWeek(currentWeek);
+  const t = d.totals || { total: 0, regular: 0, overtime: 0 };
+  add(['Total', 'Regular ' + hm(t.regular), 'Overtime ' + hm(t.overtime), '', hm(t.total)], 'tot');
+  speak('Here are your records');
+  showScreen('screenRecords', true); resetIdleTimer(60000);
+}
+function weekOf(day) { // Sunday of that week
+  const noon = new Date(day + 'T12:00:00+10:00');
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date(noon.getTime() - noon.getUTCDay() * 86400000));
+}
+
+// ============================================================================
+// Announcements / Company Policy (no PIN needed)
+// ============================================================================
+let contentCache = null, contentType = 'ANNOUNCEMENT';
+
+// ---- Announcements shown right on the home screen (refresh every 5 min) ----
+const ANN_ICONS = {
+  megaphone: ['#4f46e5', '<path d="M3 10v4h3l6 4V6L6 10z" fill="#fff"/><path d="M15 9a4 4 0 0 1 0 6" stroke="#fff" stroke-width="2" fill="none"/>'],
+  calendar: ['#ea580c', '<rect x="4" y="6" width="16" height="14" rx="2" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16M8 4v4M16 4v4" stroke="#fff" stroke-width="2"/>'],
+  gift: ['#db2777', '<rect x="4" y="10" width="16" height="10" rx="1" fill="none" stroke="#fff" stroke-width="2"/><path d="M3 7h18v3H3zM12 7v13M12 7c-2-4-6-3-4 0M12 7c2-4 6-3 4 0" stroke="#fff" stroke-width="2" fill="none"/>'],
+  document: ['#059669', '<path d="M7 3h7l4 4v14H7z" fill="none" stroke="#fff" stroke-width="2"/><path d="M10 12h5M10 16h5" stroke="#fff" stroke-width="2"/>'],
+  star: ['#ca8a04', '<path d="M12 3l2.6 5.6 6 .6-4.5 4 1.3 6-5.4-3.2-5.4 3.2 1.3-6-4.5-4 6-.6z" fill="#fff"/>'],
+  alert: ['#dc2626', '<path d="M12 3 2 20h20z" fill="#fff"/><path d="M12 10v4M12 17h.01" stroke="#dc2626" stroke-width="2.4"/>']
+};
+function annDate(iso) { return iso ? new Date(iso).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' }) : ''; }
+// ---- Slideshow ----------------------------------------------------------
+// One announcement at a time, auto-advancing. Tap = read in full. ‹ › or swipe
+// to move. Pauses while the kiosk is being used, and for a while after a
+// manual move. Pinned items come first (server order) and stay a bit longer.
+let slideIdx = 0, slideItems = [], slideTimer = null, slidePauseUntil = 0, slideStartedAt = 0;
+let SLIDE_MS = parseFloat(lsGet('kiosk_slideSec', '8')) * 1000 || 8000;
+let PINNED_MS = parseFloat(lsGet('kiosk_pinnedSlideSec', '12')) * 1000 || 12000;
+const MANUAL_PAUSE_MS = 20000;
+
+function kioskBusy() {
+  return !$('flow').classList.contains('hidden') || !$('warnOverlay').classList.contains('hidden') || !$('setupOverlay').classList.contains('hidden');
+}
+function renderAnnouncements() {
+  $('annToday').textContent = new Date(nowMs()).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' });
+  const box = $('annSlides');
+  const items = (contentCache || []).filter(function (x) { return x.type === 'ANNOUNCEMENT'; });
+  // Stay on the same announcement after a refresh if it is still there
+  const currentId = slideItems[slideIdx] ? slideItems[slideIdx].id : null;
+  slideItems = items;
+  const keep = currentId ? items.findIndex(function (x) { return x.id === currentId; }) : -1;
+  slideIdx = keep >= 0 ? keep : 0;
+  $('annAll').classList.toggle('hidden', items.length < 2);
+  $('annAll').textContent = 'View all (' + items.length + ')';
+  box.innerHTML = '';
+  if (!contentCache || !items.length) {
+    box.appendChild(Object.assign(document.createElement('div'), { className: 'ann-empty',
+      textContent: !contentCache
+        ? (!isConfigured() ? 'Kiosk not set up yet.' : homeError ? homeError + ' — retrying…' : 'Loading…')
+        : 'No announcements right now.' }));
+    clearTimeout(slideTimer); return;
+  }
+  items.forEach(function (it, i) {
+    const sl = document.createElement('div'); sl.className = 'slide' + (i === slideIdx ? ' on' : '');
+    sl.setAttribute('role', 'button'); sl.setAttribute('aria-label', it.title + '. Tap to read more.');
+    const tx = document.createElement('div'); tx.className = 'txt';
+    const tt = document.createElement('div'); tt.className = 'tt'; tt.textContent = it.title;
+    const bd = document.createElement('div'); bd.className = 'bd'; bd.textContent = it.body || '';
+    const mt = document.createElement('div'); mt.className = 'mt';
+    if (it.pinned) { const p = document.createElement('span'); p.className = 'pin'; p.textContent = '📌 PINNED'; mt.appendChild(p); }
+    mt.appendChild(document.createTextNode('Posted ' + annDate(it.updatedAt) + '  ·  '));
+    const more = document.createElement('b'); more.textContent = 'Tap to read more'; mt.appendChild(more);
+    tx.appendChild(tt); tx.appendChild(bd); tx.appendChild(mt);
+    sl.appendChild(tx); // no icon box: more room for the text
+    sl.onclick = function () { openAnnouncement(it, false); };
+    box.appendChild(sl);
+  });
+  if (items.length > 1) {
+    const prev = document.createElement('button'); prev.className = 'nav-btn prev'; prev.setAttribute('aria-label', 'Previous'); prev.textContent = '‹';
+    const next = document.createElement('button'); next.className = 'nav-btn next'; next.setAttribute('aria-label', 'Next'); next.textContent = '›';
+    prev.onclick = function (e) { e.stopPropagation(); manualMove(-1); };
+    next.onclick = function (e) { e.stopPropagation(); manualMove(1); };
+    box.appendChild(prev); box.appendChild(next);
+    const dots = document.createElement('div'); dots.className = 'sdots'; dots.id = 'annDots';
+    items.forEach(function () { dots.appendChild(document.createElement('i')); });
+    const cnt = document.createElement('span'); cnt.id = 'annCount'; dots.appendChild(cnt);
+    box.appendChild(dots);
+    const pr = document.createElement('div'); pr.className = 'progress'; pr.id = 'annProgress'; box.appendChild(pr);
+  }
+  fitSlides();
+  paintSlide(false);
+  scheduleNext();
+}
+// Show as many lines of text as fit (up to 4) without running into the dots.
+function fitSlides() {
+  const box = $('annSlides'); if (!box) return;
+  const limit = box.getBoundingClientRect().bottom - (slideItems.length > 1 ? 30 : 10);
+  box.querySelectorAll('.slide').forEach(function (sl) {
+    const bd = sl.querySelector('.bd'), mt = sl.querySelector('.mt');
+    for (let n = 4; n >= 1; n--) {
+      bd.style.webkitLineClamp = String(n);
+      if (mt.getBoundingClientRect().bottom <= limit) break;
+    }
+  });
+}
+window.addEventListener('resize', function () { clearTimeout(window.__fitT); window.__fitT = setTimeout(fitSlides, 200); });
+function paintSlide(animate) {
+  const slides = $('annSlides').querySelectorAll('.slide');
+  slides.forEach(function (el, i) {
+    el.classList.toggle('on', i === slideIdx);
+    if (animate && i !== slideIdx) el.classList.add('off-left'); else el.classList.remove('off-left');
+  });
+  const dots = $('annDots');
+  if (dots) {
+    dots.querySelectorAll('i').forEach(function (d, i) { d.classList.toggle('on', i === slideIdx); });
+    $('annCount').textContent = (slideIdx + 1) + ' / ' + slideItems.length;
+  }
+}
+function slideDuration() { return slideItems[slideIdx] && slideItems[slideIdx].pinned ? PINNED_MS : SLIDE_MS; }
+function scheduleNext() {
+  clearTimeout(slideTimer);
+  if (slideItems.length < 2) return;
+  const wait = Math.max(slideDuration(), slidePauseUntil - Date.now());
+  slideStartedAt = Date.now() + (wait - slideDuration());
+  animateProgress(wait);
+  slideTimer = setTimeout(function () {
+    if (kioskBusy()) { slidePauseUntil = Date.now() + 5000; scheduleNext(); return; } // paused while someone uses the kiosk
+    slideIdx = (slideIdx + 1) % slideItems.length;
+    paintSlide(true);
+    scheduleNext();
+  }, wait);
+}
+function animateProgress(wait) {
+  const pr = $('annProgress'); if (!pr) return;
+  pr.style.transition = 'none'; pr.style.width = '0';
+  void pr.offsetWidth; // restart the bar
+  pr.style.transition = 'width ' + (wait / 1000) + 's linear'; pr.style.width = '100%';
+}
+function manualMove(step) {
+  if (slideItems.length < 2) return;
+  slideIdx = (slideIdx + step + slideItems.length) % slideItems.length;
+  slidePauseUntil = Date.now() + MANUAL_PAUSE_MS; // give them time to read
+  paintSlide(true);
+  scheduleNext();
+}
+// Swipe left / right on the slideshow
+(function () {
+  let x0 = null, y0 = null;
+  const box = document.getElementById('annSlides');
+  box.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  box.addEventListener('touchend', function (e) {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      e.preventDefault();
+      manualMove(dx < 0 ? 1 : -1);
+      box.dataset.swiped = '1'; setTimeout(function () { box.dataset.swiped = ''; }, 350);
+    }
+  });
+  box.addEventListener('click', function (e) { if (box.dataset.swiped) { e.stopPropagation(); e.preventDefault(); } }, true);
+})();
+
+async function refreshAnnouncements() { return refreshHome(); } // KHOME
+async function refreshAnnouncementsLegacy() {
+  if (!isConfigured()) { renderAnnouncements(); return; }
+  const c = getConfig();
+  try {
+    const r = await api('kioskContent', { terminalId: c.terminalId, terminalSecret: c.secret });
+    if (r.ok) contentCache = r.data;
+  } catch (e) { /* keep showing the last list while offline */ }
+  renderAnnouncements();
+}
+// (announcements are refreshed by refreshHome every minute)
+setInterval(function () { $('annToday').textContent = new Date(nowMs()).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' }); }, 60000);
+function openAnnouncement(it, fromList) {
+  $('contentPill').textContent = 'ANNOUNCEMENT';
+  showContentItem(it);
+  $('contentBack').classList.toggle('hidden', !fromList); // Back only when opened from "View all"
+  showScreen('screenContent', true); resetIdleTimer(60000);
+}
+/** "View all": every announcement in a list; tap one to read it, Back returns to the list. */
+function openAllAnnouncements() {
+  contentType = 'ANNOUNCEMENT';
+  $('contentPill').textContent = 'ANNOUNCEMENTS';
+  showContentList();
+  showScreen('screenContent', true); resetIdleTimer(60000);
+}
+async function openContent(type) {
+  if (!isConfigured()) { showResult('error', '⚠', 'Kiosk not set up', '', 'Please ask an Admin to set up this kiosk.', true); return; }
+  contentType = type;
+  $('contentPill').textContent = type === 'POLICY' ? 'COMPANY POLICY' : 'ANNOUNCEMENTS';
+  $('contentTitle').textContent = type === 'POLICY' ? 'Company Policy' : 'Announcements';
+  $('contentBack').classList.add('hidden');
+  $('contentBody').innerHTML = '<div class="empty"><span class="spinner"></span>Loading…</div>';
+  showScreen('screenContent', true); resetIdleTimer(60000);
+  const c = getConfig();
+  try {
+    const r = await api('kioskContent', { terminalId: c.terminalId, terminalSecret: c.secret });
+    if (r.ok) contentCache = r.data;
+    else { $('contentBody').innerHTML = ''; $('contentBody').appendChild(emptyBox(r.error.message)); return; }
+  } catch (e) {
+    if (!contentCache) { $('contentBody').innerHTML = ''; $('contentBody').appendChild(emptyBox('No internet right now. Please try again in a moment.')); return; }
+  }
+  showContentList();
+}
+function emptyBox(t) { const d = document.createElement('div'); d.className = 'empty'; d.textContent = t; return d; }
+function showContentList() {
+  $('contentBack').classList.add('hidden');
+  $('contentTitle').textContent = contentType === 'POLICY' ? 'Company Policy' : 'Announcements';
+  const items = (contentCache || []).filter(function (x) { return x.type === contentType; });
+  const box = $('contentBody'); box.innerHTML = '';
+  if (!items.length) { box.appendChild(emptyBox(contentType === 'POLICY' ? 'No policies posted yet.' : 'No announcements right now.')); return; }
+  const list = document.createElement('div'); list.className = 'clist';
+  items.forEach(function (it) {
+    const b = document.createElement('button'); b.className = 'citem';
+    const t = document.createElement('b'); t.textContent = (it.pinned ? '📌 ' : '') + it.title;
+    const s = document.createElement('span');
+    s.textContent = it.updatedAt ? 'Posted ' + new Date(it.updatedAt).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    b.appendChild(t); b.appendChild(s);
+    b.onclick = function () { showContentItem(it); $('contentBack').classList.remove('hidden'); resetIdleTimer(60000); };
+    list.appendChild(b);
+  });
+  box.appendChild(list);
+}
+function showContentItem(it) {
+  $('contentTitle').textContent = it.title;
+  const box = $('contentBody'); box.innerHTML = '';
+  const p = document.createElement('div'); p.className = 'cbody'; p.textContent = it.body; box.appendChild(p);
+  $('contentBack').classList.remove('hidden');
+}
+
+// ============================================================================
+// Offline queue (clock in / out only)
+// ============================================================================
+function readQueue(key) { try { return JSON.parse(lsGet(key, '[]')) || []; } catch (e) { return []; } }
+function writeQueue(key, q) { lsSet(key, JSON.stringify(q)); }
+function queueOffline(punch, dir) {
+  const q = readQueue(LS.queue);
+  const localId = getConfig().terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+  q.push({ localId: localId,
+    direction: dir, originalTimestamp: new Date(nowMs()).toISOString(), employeeId: punch.employeeId, pin: punch.pin }); // AUDIT2 B1: corrected time
+  writeQueue(LS.queue, q); updateStatusBar();
+  return localId;
+}
+let syncing = false;
+async function syncQueue() {
+  if (syncing || !isConfigured()) return;
+  let q = readQueue(LS.queue);
+  if (!q.length) { updateStatusBar(); return; }
+  syncing = true;
+  const c = getConfig();
+  try {
+    while (q.length) {
+      const item = q[0]; let result;
+      try {
+        result = await api('syncOfflinePunch', { localId: item.localId, direction: item.direction, originalTimestamp: item.originalTimestamp,
+          employeeId: item.employeeId, pin: item.pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret });
+      } catch (e) { break; }
+      if (!result.ok && result.error && result.error.code === 'TERMINAL_INVALID') break;
+      if (!result.ok) {
+        const rej = readQueue(LS.rejected);
+        rej.push({ employeeId: item.employeeId, direction: item.direction, originalTimestamp: item.originalTimestamp, reason: result.error ? result.error.message : 'Rejected' });
+        writeQueue(LS.rejected, rej.slice(-50));
+      }
+      if (result.ok && result.data && result.data.rawId) linkPhoto(item.localId, result.data.rawId); // PHOTO
+      q.shift(); writeQueue(LS.queue, q);
+    }
+  } finally { syncing = false; updateStatusBar(); flushPhotos(); }
+}
+setInterval(syncQueue, 60000);
+window.addEventListener('online', syncQueue);
+
+// Keep the server warm so the first punch after a quiet period is fast.
+function warmUp() { return refreshHome(); } // KHOME: the home refresh also keeps the server warm
+function warmUpLegacy() {
+  if (!isConfigured() || busy || !navigator.onLine) return;
+  const c = getConfig();
+  const t0 = Date.now();
+  api('kioskPing', { terminalId: c.terminalId, terminalSecret: c.secret }).then(function (r) {
+    if (r && r.ok && r.data.serverTime) { // AUDIT2 B1: measure the PC clock error
+      const t1 = Date.now();
+      if (t1 - t0 < 8000) { // ignore very slow replies (not precise enough)
+        clockOffset = new Date(r.data.serverTime).getTime() + 500 - (t0 + t1) / 2; // server time has whole seconds
+        lsSet('kiosk_clockOffset', String(Math.round(clockOffset)));
+        tickClock(); updateStatusBar();
+      }
+    }
+    if (r && r.ok) { // keep the venue (and so the logo) in step with the Admin portal
+      lsSet(LS.venueId, r.data.venueId || ''); lsSet(LS.venueName, r.data.venueName || r.data.venueId || '');
+      if (r.data.slideSeconds) { SLIDE_MS = r.data.slideSeconds * 1000; lsSet('kiosk_slideSec', String(r.data.slideSeconds)); }
+      if (r.data.pinnedSlideSeconds) { PINNED_MS = r.data.pinnedSlideSeconds * 1000; lsSet('kiosk_pinnedSlideSec', String(r.data.pinnedSlideSeconds)); }
+      showVenue();
+    }
+  }).catch(function () {});
+}
+
+// ============================================================================
+// KHOME: ONE request every minute for the whole home screen — clock sync,
+// venue, slide timing, announcements, on-break list. Announcements are also
+// kept on this PC, so they show instantly after a restart and stay visible
+// if the internet drops. A failed load retries quickly (5 s, 15 s, 30 s).
+// ============================================================================
+let homeBusy = false, homeRetry = 0, homeTimer = null, homeLegacy = false, homeError = '';
+try { const saved = JSON.parse(lsGet('kiosk_ann_cache', 'null')); if (saved && Array.isArray(saved)) contentCache = saved; } catch (e) {}
+async function refreshHome() {
+  if (!isConfigured()) { renderAnnouncements(); return; }
+  if (homeLegacy) { warmUpLegacy(); refreshAnnouncementsLegacy(); refreshOnBreakLegacy(); return; }
+  if (homeBusy) return;
+  homeBusy = true;
+  const c = getConfig();
+  const t0 = Date.now();
+  try {
+    const r = await api('kioskHome', { terminalId: c.terminalId, terminalSecret: c.secret }, 20000);
+    const t1 = Date.now();
+    if (!r.ok && r.error && r.error.code === 'UNKNOWN_ACTION') { // server not updated yet: use the old requests
+      homeLegacy = true; homeBusy = false; return refreshHome();
+    }
+    if (!r.ok) { homeError = r.error ? r.error.message : 'Could not load'; throw new Error(homeError); }
+    const d = r.data;
+    if (d.serverTime && t1 - t0 < 8000) {
+      clockOffset = new Date(d.serverTime).getTime() + 500 - (t0 + t1) / 2;
+      lsSet('kiosk_clockOffset', String(Math.round(clockOffset)));
+    }
+    lsSet(LS.venueId, d.venueId || ''); lsSet(LS.venueName, d.venueName || d.venueId || '');
+    if (d.slideSeconds) { SLIDE_MS = d.slideSeconds * 1000; lsSet('kiosk_slideSec', String(d.slideSeconds)); }
+    if (d.pinnedSlideSeconds) { PINNED_MS = d.pinnedSlideSeconds * 1000; lsSet('kiosk_pinnedSlideSec', String(d.pinnedSlideSeconds)); }
+    applyServerButtonSound(d.buttonSound); // KSOUND
+    applyServerCamera(d.camera); // PHOTO
+    contentCache = d.announcements || [];
+    lsSet('kiosk_ann_cache', JSON.stringify(contentCache));
+    onBreakItems = d.onBreak || []; onBreakAt = Date.now();
+    homeRetry = 0; homeError = '';
+    lsSet('kiosk_last_home_ms', String(t1 - t0));
+    showVenue(); tickClock(); updateStatusBar();
+    renderAnnouncements(); paintOnBreak(true);
+    scheduleHome(60000);
+  } catch (e) {
+    if (!homeError) homeError = (e && e.message === 'timeout') ? 'The server took too long to answer' : 'Cannot reach the server';
+    homeRetry++;
+    renderAnnouncements(); // shows the saved list, or a clear message — never "Loading…" forever
+    scheduleHome([5000, 15000, 30000][Math.min(homeRetry - 1, 2)] || 60000);
+  } finally { homeBusy = false; }
+}
+function scheduleHome(ms) { // small random delay so the two kiosks never hit the server at the same second
+  clearTimeout(homeTimer); homeTimer = setTimeout(refreshHome, ms + Math.floor(Math.random() * 8000));
+}
+
+function updateStatusBar() {
+  const bar = $('statusBar');
+  const pending = readQueue(LS.queue).length, rejected = readQueue(LS.rejected).length;
+  if (!isConfigured()) { bar.className = 'status warn'; bar.textContent = 'Kiosk not set up — Admin: press and hold the gear icon for 3 seconds.'; }
+  else if (pending) { bar.className = 'status warn'; bar.textContent = pending + ' punch(es) waiting to sync…'; }
+  else if (rejected) { bar.className = 'status warn'; bar.textContent = rejected + ' offline punch(es) need Admin review (open setup).'; }
+  else if (Math.abs(clockOffset) > 60000) {
+    bar.className = 'status';
+    bar.textContent = 'This PC\'s clock is ' + Math.round(Math.abs(clockOffset) / 60000) + ' min ' + (clockOffset > 0 ? 'behind' : 'ahead') +
+      ' — the kiosk shows the correct server time.';
+  }
+  else if (cameraOn && camError) { bar.className = 'status'; bar.textContent = '📷 Camera not available — punches still work (no photo). ' + camReason; } // PHOTO / CAMDIAG
+  else { bar.className = 'status'; bar.textContent = ''; }
+}
+
+// ============================================================================
+// PHOTO — Clock IN / OUT snapshot (160×120 JPEG, ~6 KB). Set per kiosk in
+// Admin → Kiosks. The punch never waits for the photo: it is queued and sent
+// in the background after the punch is saved (also after offline sync).
+// ============================================================================
+const PHOTO_Q = 'kiosk_photoQueue';
+let cameraOn = false, camStream = null, camVideo = null, camError = false, camReason = '';
+/** CAMDIAG: plain-language reason why the camera cannot be used (shown on the kiosk + in setup). */
+function cameraReason(e) {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return 'Chrome does not allow the camera for this page address (' + location.protocol + '//). Open the kiosk from an https link or a kiosk browser app.';
+  }
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'Camera permission is blocked. In Chrome: tap the icon left of the address → Permissions → Camera → Allow, then reload.';
+  if (n === 'NotSupportedError') return 'Chrome did not offer camera permission for this page. Allow the camera in Chrome site settings, or open the kiosk from an https link or a kiosk browser app.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'No camera was found on this device.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'The camera is busy (another app may be using it). Close other camera apps, then try again.';
+  return 'Camera error: ' + ((e && (e.name + ' ' + e.message)) || 'unknown');
+}
+function cameraStatusText() {
+  const setting = lsGet('kiosk_serverCamera', 'OFF');
+  return 'Camera — setting from Admin: ' + setting + ' · page address: ' + location.protocol + '//' +
+    ' · secure page: ' + (window.isSecureContext ? 'yes' : 'NO') + ' · camera API: ' + (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'yes' : 'NO') +
+    ' · status: ' + (setting !== 'ON' ? 'off' : camVideo && camVideo.videoWidth ? 'working (' + camVideo.videoWidth + '×' + camVideo.videoHeight + ')' : camError ? 'NOT AVAILABLE — ' + camReason : 'starting…');
+}
+async function retryCamera() { stopCamera(); camError = false; camReason = ''; if (cameraOn) await startCamera(); $('setupCamera').textContent = cameraStatusText(); }
+function applyServerCamera(v) {
+  if (v !== 'ON' && v !== 'OFF') return;
+  lsSet('kiosk_serverCamera', v);
+  if (v === 'ON' && !cameraOn) { cameraOn = true; startCamera(); }
+  else if (v === 'OFF' && cameraOn) { cameraOn = false; stopCamera(); }
+  updateStatusBar();
+}
+async function startCamera() {
+  camError = false;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+    camVideo = document.createElement('video');
+    camVideo.muted = true; camVideo.playsInline = true; camVideo.setAttribute('playsinline', '');
+    camVideo.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
+    document.body.appendChild(camVideo);
+    camVideo.srcObject = camStream; await camVideo.play();
+  } catch (e) { camError = true; camReason = cameraReason(e); stopCamera(true); }
+  updateStatusBar();
+}
+function stopCamera(keepError) {
+  if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
+  if (camVideo) camVideo.remove();
+  camStream = null; camVideo = null; if (!keepError) camError = false;
+}
+/** One 160×120 frame as base64 JPEG (no prefix), or null. Never throws. */
+function capturePhoto() {
+  try {
+    if (!cameraOn || !camVideo || !camVideo.videoWidth) return null;
+    const cv = document.createElement('canvas'); cv.width = 160; cv.height = 120;
+    const vw = camVideo.videoWidth, vh = camVideo.videoHeight, want = 4 / 3;
+    let sw = vw, sh = vh; if (vw / vh > want) sw = vh * want; else sh = vw / want; // centre crop to 4:3
+    cv.getContext('2d').drawImage(camVideo, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, 160, 120);
+    let url = cv.toDataURL('image/jpeg', 0.6);
+    if (url.length > 26000) url = cv.toDataURL('image/jpeg', 0.4);
+    return url.length > 26000 ? null : url.split(',')[1];
+  } catch (e) { return null; }
+}
+function queuePhoto(image, rawId, localId) {
+  if (!image || (!rawId && !localId)) return;
+  const q = readQueue(PHOTO_Q).filter(function (x) { return Date.now() - x.at < 3 * 86400000; });
+  q.push({ rawId: rawId || '', localId: localId || '', image: image, at: Date.now() });
+  writeQueue(PHOTO_Q, q.slice(-30)); // at most 30 photos wait on this kiosk
+  if (rawId) setTimeout(flushPhotos, 1500);
+}
+function linkPhoto(localId, rawId) {
+  const q = readQueue(PHOTO_Q);
+  q.forEach(function (x) { if (x.localId === localId) x.rawId = rawId; });
+  writeQueue(PHOTO_Q, q);
+}
+let photoBusy = false;
+async function flushPhotos() {
+  if (photoBusy || !isConfigured()) return;
+  photoBusy = true;
+  const c = getConfig();
+  try {
+    let q = readQueue(PHOTO_Q);
+    for (const item of q.slice()) {
+      if (!item.rawId) continue;
+      let r;
+      try { r = await api('uploadPunchPhoto', { terminalId: c.terminalId, terminalSecret: c.secret, rawId: item.rawId, image: item.image }); }
+      catch (e) { break; } // offline: keep them for later
+      if (r && (r.ok || (r.error && r.error.code !== 'INTERNAL_ERROR'))) { // saved, or will never be accepted
+        q = readQueue(PHOTO_Q).filter(function (x) { return x.rawId !== item.rawId; });
+        writeQueue(PHOTO_Q, q);
+      }
+    }
+  } finally { photoBusy = false; }
+}
+setInterval(flushPhotos, 60000);
+if (lsGet('kiosk_serverCamera', 'OFF') === 'ON') applyServerCamera('ON');
+
+// ============================================================================
+// NOMENU: a long press must not open the browser's Share / Print / Copy menu on the
+// kiosk (Android tablets). Text boxes in the admin setup still allow copy / paste.
+// ============================================================================
+document.addEventListener('contextmenu', function (e) {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+  e.preventDefault();
+});
+document.addEventListener('selectstart', function (e) {
+  const t = e.target;
+  if (t && t.closest && t.closest('input, textarea, .setup')) return;
+  e.preventDefault();
+});
+document.addEventListener('dragstart', function (e) { e.preventDefault(); });
+// ============================================================================
+// Admin setup — press and hold the gear for 3 seconds
+// ============================================================================
+(function () {
+  const g = $('gear'); let t = null;
+  function start() { t = setTimeout(openSetup, 3000); }
+  function cancel() { clearTimeout(t); }
+  g.addEventListener('mousedown', start); g.addEventListener('touchstart', start, { passive: true });
+  ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(function (ev) { g.addEventListener(ev, cancel); });
+})();
+function openSetup() {
+  const c = getConfig();
+  $('setupUrl').value = c.url; $('setupTermId').value = c.terminalId; $('setupSecret').value = ''; $('setupResult').textContent = '';
+  const rej = readQueue(LS.rejected), pending = readQueue(LS.queue);
+  $('setupQueue').textContent = 'Last home-screen load: ' + (lsGet('kiosk_last_home_ms', '') ? lsGet('kiosk_last_home_ms', '') + ' ms' : '—') +
+    (homeError ? ' (last error: ' + homeError + ')' : '') + '\nPending sync: ' + pending.length + '\nRejected offline punches (check in Admin portal → Clock In / Out): ' + rej.length +
+    rej.map(function (r) { return '\n • ID ' + r.employeeId + '  ' + (r.direction === 'IN' ? 'Clock IN' : r.direction === 'OUT' ? 'Clock OUT' : r.direction) +
+      '  ' + saipanStamp(r.originalTimestamp) + ' — ' + r.reason; }).join('');
+  $('setupReviewed').classList.toggle('hidden', !rej.length);
+  $('setupCamera').textContent = cameraStatusText(); // CAMDIAG
+  $('setupCamRetry').classList.toggle('hidden', lsGet('kiosk_serverCamera', 'OFF') !== 'ON');
+  $('setupOverlay').classList.remove('hidden');
+}
+// Rejected offline punches are shown in SAIPAN time (not UTC)
+function saipanStamp(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' (Saipan)';
+}
+// Clears the list after the admin has checked / entered them in the Admin portal
+function markRejectedReviewed() {
+  const n = readQueue(LS.rejected).length;
+  if (!n) return;
+  if (!confirm('Clear ' + n + ' rejected offline punch(es) from this kiosk?\n\nDo this only AFTER checking each one in the Admin portal (Clock In / Out) and adding any missing punch.')) return;
+  writeQueue(LS.rejected, []);
+  updateStatusBar();
+  openSetup(); // refresh the panel
+  $('setupResult').className = 'result-line ok'; $('setupResult').textContent = 'List cleared ✓';
+}
+function closeSetup() { $('setupOverlay').classList.add('hidden'); $('setupSecret').value = ''; }
+async function testAndSaveSetup() {
+  const out = $('setupResult');
+  const url = $('setupUrl').value.trim(), termId = $('setupTermId').value.trim();
+  const secret = $('setupSecret').value.trim() || getConfig().secret;
+  if (!url || !termId || !secret) { out.className = 'result-line err'; out.textContent = 'All three fields are required.'; return; }
+  out.className = 'result-line'; out.textContent = 'Testing…';
+  const btn = $('setupSaveBtn'); btn.classList.add('loading'); btn.disabled = true;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'kioskPing', payload: { terminalId: termId, terminalSecret: secret } }) });
+    const result = await res.json();
+    if (!result.ok) { out.className = 'result-line err'; out.textContent = result.error.message; return; }
+    lsSet(LS.url, url); lsSet(LS.termId, termId); lsSet(LS.secret, secret);
+    lsSet(LS.venueName, result.data.venueName || result.data.venueId);
+    lsSet(LS.venueId, result.data.venueId || '');
+    showVenue(); homeLegacy = false; homeRetry = 0;
+    out.className = 'result-line ok'; out.textContent = 'Saved ✓  ' + result.data.terminalName + ' @ ' + (result.data.venueName || result.data.venueId);
+    updateStatusBar(); syncQueue(); refreshHome();
+  } catch (e) {
+    out.className = 'result-line err'; out.textContent = 'Could not reach the Web App URL. Check the URL and the internet connection.';
+  } finally { btn.classList.remove('loading'); btn.disabled = false; }
+}
+function showVenue() {
+  const v = lsGet(LS.venueName, '');
+  $('footVenue').textContent = 'Version 2.0' + (v ? ' — ' + v : '');
+  // Show only this kiosk's venue logo. Unknown / not set up yet = both logos.
+  let id = lsGet(LS.venueId, '');
+  if (!id && /club\s*88/i.test(v)) id = 'VEN-C88';          // kiosks set up before this update
+  if (!id && /saipan\s*vegas/i.test(v)) id = 'VEN-SV';
+  const b = $('brand');
+  b.classList.toggle('only-sv', id === 'VEN-SV');
+  b.classList.toggle('only-c88', id === 'VEN-C88');
+}
+
+// ---- start ----
+showVenue(); updateStatusBar(); resetKiosk(); renderAnnouncements(); syncQueue(); refreshHome(); // KHOME: saved announcements show instantly
+</script>
+</body>
+</html>
