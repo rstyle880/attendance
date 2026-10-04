@@ -209,6 +209,15 @@
     border: 1px solid var(--line); border-radius: 22px; padding: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, .55); }
   .panel.wide { width: min(900px, 96vw); }
   .ph { text-align: center; margin-bottom: 12px; }
+  /* CAMPV: live camera preview (Clock IN / OUT only), centered above "Enter Employee ID / PIN" */
+  .campv { display: flex; flex-direction: column; align-items: center; margin: 0 auto 12px; }
+  .campv .frame { position: relative; width: 240px; height: 180px; border-radius: 16px; overflow: hidden;
+    border: 3px solid #22c55e; box-shadow: 0 0 0 5px rgba(34, 197, 94, .15); background: #111827; }
+  .campv video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+  .campv .oval { position: absolute; left: 50%; top: 50%; width: 46%; height: 82%; transform: translate(-50%, -50%);
+    border: 2px dashed rgba(255, 255, 255, .55); border-radius: 50%; pointer-events: none; }
+  .campv .hint { margin-top: 6px; font-size: 14px; color: #cfe3ff; text-align: center; }
+  @media (max-height: 700px) { .campv .frame { width: 176px; height: 132px; } }
   .pill { display: inline-block; padding: 6px 18px; border-radius: 999px; font-weight: 800; font-size: 14px; color: #fff; margin-bottom: 10px; }
   .pill.in { background: var(--green); } .pill.out { background: var(--red); } .pill.brk { background: #d97706; } .pill.rec { background: var(--blue); }
   .ph h2 { margin: 0; font-size: 22px; font-weight: 700; }
@@ -635,12 +644,39 @@ function showScreen(id, wide) {
   $('flow').classList.remove('hidden');
   $('panel').classList.toggle('wide', !!wide);
   SCREENS.forEach(function (s) { $(s).classList.toggle('hidden', s !== id); });
+  updateCamPreview(id); // CAMPV
+}
+// CAMPV: show the live camera (mirrored, like a mirror) on the Employee ID and PIN
+// screens for Clock IN / OUT, so employees can see themselves before the photo is
+// taken (at PIN entry). Uses the camera that is already open — no extra upload.
+let campvEl = null;
+function updateCamPreview(screenId) {
+  let want = false;
+  try { want = (screenId === 'screenEmpId' || screenId === 'screenPin') && (mode === 'IN' || mode === 'OUT') &&
+    cameraOn && camStream && camVideo && camVideo.videoWidth > 0; } catch (e) { want = false; }
+  if (!want) { hideCamPreview(); return; }
+  if (!campvEl) {
+    campvEl = document.createElement('div'); campvEl.className = 'campv';
+    campvEl.innerHTML = '<div class="frame"><video muted playsinline autoplay></video><div class="oval"></div></div>' +
+      '<div class="hint">📷 Look at the camera — photo is taken when you enter your PIN</div>';
+  }
+  const scr = $(screenId);
+  if (campvEl.parentNode !== scr) scr.insertBefore(campvEl, scr.firstChild);
+  const v = campvEl.querySelector('video');
+  if (v.srcObject !== camStream) { v.srcObject = camStream; v.play().catch(function () {}); }
+  campvEl.style.display = '';
+}
+function hideCamPreview() {
+  if (!campvEl) return;
+  campvEl.style.display = 'none';
+  const v = campvEl.querySelector('video'); if (v.srcObject) { v.pause(); v.srcObject = null; }
 }
 function resetKiosk() {
   clearTimeout(resultTimer); clearTimeout(idleTimer);
   mode = null; employeeId = ''; pin = ''; busy = false;
   breakPin = ''; noInPin = ''; clearInterval(brkTick);
   $('flow').classList.add('hidden');
+  hideCamPreview(); // CAMPV
   if (typeof scheduleNext === 'function' && slideItems.length > 1) { slidePauseUntil = Date.now() + 3000; scheduleNext(); }
 }
 
@@ -1363,6 +1399,7 @@ async function startCamera() {
   updateStatusBar();
 }
 function stopCamera(keepError) {
+  hideCamPreview(); // CAMPV
   if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
   if (camVideo) camVideo.remove();
   camStream = null; camVideo = null; if (!keepError) camError = false;
