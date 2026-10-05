@@ -989,6 +989,29 @@
   </div>
 </div>
 
+<!-- ================= TIME CARD EDIT (TCEDIT) ================= -->
+<div class="dlg-overlay" id="tcEditDlg" role="dialog" aria-modal="true" aria-labelledby="tcEditTitle">
+  <div class="dlg" style="max-width:760px">
+    <h2 id="tcEditTitle">Edit time</h2>
+    <p class="sub" id="tcEditSub"></p>
+    <div class="table-wrap" style="max-height:46vh;overflow:auto"><table id="tcEditTable"><thead><tr><th>Day</th><th>Type</th><th>Original</th><th>Corrected time</th><th>Remove</th></tr></thead><tbody></tbody></table></div>
+    <div class="pin-box" style="margin-top:10px">
+      <b>Add a punch</b> <span class="sub" style="margin:0">(missing punch, or time entered in advance up to 14 days ahead)</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <select id="teAddDir" style="max-width:130px"><option value="">— none —</option><option value="IN">Clock IN</option><option value="OUT">Clock OUT</option></select>
+        <input id="teAddDate" type="date" style="max-width:170px"><input id="teAddTime" type="time" style="max-width:130px">
+        <select id="teAddVenue" style="max-width:190px"></select>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:10px"><div class="full"><label for="teReason">Reason (required)</label><input id="teReason" maxlength="200" placeholder="e.g. Employee forgot to clock out — confirmed by supervisor"></div></div>
+    <div id="teMsg" class="msg" style="white-space:pre-line"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save corrections</button>
+      <button class="btn btn-secondary" onclick="closeDlg('tcEditDlg')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= MY ACCOUNT (MYACCT) ================= -->
 <div class="dlg-overlay" id="myAcctDlg" role="dialog" aria-modal="true" aria-labelledby="myAcctTitle">
   <div class="dlg" style="max-width:460px">
@@ -1795,12 +1818,22 @@ async function refreshRaw() {
       : el('button', { className: 'btn btn-danger-ghost btn-sm', text: 'Void', onclick: function () { voidPunch(this, r); } });
     const pc = el('span', { className: 'sub', style: 'margin:0', text: (r.direction === 'IN' || r.direction === 'OUT') ? '…' : '' });
     if (r.direction === 'IN' || r.direction === 'OUT') photoCells[r.rawId] = pc;
-    addRow(tbody, [
-      saipanDateTime(r.originalTimestamp), dirLabel(r.direction), methodLabel(r.method),
+    const trR = addRow(tbody, [
+      saipanDateTime(r.originalTimestamp), dirLabel(r.direction), methodLabel(r.method) + (r.pinReason === 'Pre-entered' ? ' (pre-entered)' : ''),
       r.terminalId === 'ADMIN-PORTAL' ? 'Admin portal' : r.terminalId, pc,
-      r.voidFlag ? 'Voided' : 'OK', actionCell
+      r.voidFlag ? 'Removed' : 'OK', actionCell
     ], r.voidFlag ? 'voided' : '');
+    if (r.voidFlag) { trR.style.display = 'none'; trR.dataset.removed = '1'; } // TCEDIT: removed punches hidden by default
   });
+  const nRemoved = result.data.filter(function (r) { return r.voidFlag; }).length;
+  if (nRemoved) {
+    const btn = el('button', { className: 'btn btn-secondary btn-sm', text: 'Show removed punches (' + nRemoved + ')', onclick: function () {
+      const show = this.dataset.on !== '1'; this.dataset.on = show ? '1' : '';
+      tbody.querySelectorAll('tr[data-removed="1"]').forEach(function (x) { x.style.display = show ? '' : 'none'; });
+      this.textContent = (show ? 'Hide' : 'Show') + ' removed punches (' + nRemoved + ')';
+    } });
+    const tr = addRow(tbody, [btn]); tr.children[0].colSpan = 7;
+  }
   // PHOTO: thumbnails (loaded after the list, in the background)
   const ph = await loadPunchPhotos(Object.keys(photoCells));
   Object.keys(photoCells).forEach(function (id) { photoCells[id].replaceWith(photoThumb(ph[id], 48, true)); });
@@ -2068,7 +2101,9 @@ function renderTimecard(c, startDate, endDate) {
   const card = el('div', { className: 'timecard' });
   card._tc = { c: c, startDate: startDate, endDate: endDate }; // PHOTO: for the optional photo page
   card.appendChild(el('div', { className: 'tc-head' }, [
-    el('div', { className: 'tc-title', text: 'Time Card' }),
+    el('div', { className: 'tc-title' }, ['Time Card ',
+      el('button', { className: 'btn btn-secondary btn-sm no-print tc-edit', style: 'margin-left:10px;vertical-align:middle', text: '✎ Edit',
+        title: 'Correct this employee\'s IN / OUT times', onclick: function () { openTcEdit(c, startDate, endDate); } })]),
     el('div', { className: 'tc-company', text: companyFor(c) })
   ]));
   const fmt = function (d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-US', { timeZone: TZ, month: '2-digit', day: '2-digit', year: 'numeric' }); };
@@ -2138,18 +2173,19 @@ function renderTimecard(c, startDate, endDate) {
         const moved = r.outVenueId && r.outVenueId !== r.venueId;
         if (moved) note = 'Moved to ' + venueName(r.outVenueId) + (note ? '; ' + note : '');
         // Small label ABOVE the time: INSERTED (added later) or BY ADMIN (punched by an admin at the time)
-        const timeCell = function (iso, method, plusDay) {
+        const timeCell = function (iso, method, plusDay, pre) {
           if (!iso) return '';
           const kids = [];
-          if (method === 'MANUAL') kids.push(el('span', { className: 'tlabel ins', text: 'INSERTED' }));
+          if (pre) kids.push(el('span', { className: 'tlabel ins', text: 'PRE-ENTERED' })); // TCEDIT
+          else if (method === 'MANUAL') kids.push(el('span', { className: 'tlabel ins', text: 'INSERTED' }));
           else if (method === 'ADMIN') kids.push(el('span', { className: 'tlabel adm', text: 'BY ADMIN' }));
           kids.push(el('span', { text: saipanTimeOnly(iso) }));
           if (plusDay) kids.push(el('span', { className: 'no-print', style: 'color:#8a93a6', text: ' (+1 day)' })); // TQP style: not printed
           return el('div', null, kids);
         };
-        const inTxt = timeCell(r.timeIn, r.inMethod, false);
+        const inTxt = timeCell(r.timeIn, r.inMethod, false, r.inPre);
         const outTxt = timeCell(r.timeOut, r.outMethod,
-          !!(r.timeOut && r.timeIn && saipanDate(new Date(r.timeOut)) !== saipanDate(new Date(r.timeIn))));
+          !!(r.timeOut && r.timeIn && saipanDate(new Date(r.timeOut)) !== saipanDate(new Date(r.timeIn))), r.outPre); // TCEDIT
         const noteCell = el('div', null, [el('span', { text: note })]);
         if (r.canWaive && r.inRawId) {
           noteCell.appendChild(el('div', { className: 'no-print', style: 'margin-top:4px' }, [
@@ -2202,13 +2238,13 @@ function renderTimecard(c, startDate, endDate) {
       el('b', { text: 'Time Card — page 2' }),
       el('span', { text: companyFor(c) + '  ·  ' + c.name + '  ·  ID ' + c.employeeId + '  ·  Pay period ' + fmt(startDate) + ' to ' + fmt(endDate) })
     ]),
-    renderCorrections(c.corrections || [])
+    renderCorrections(c.corrections || [], c.correctionHistory || [])
   ]);
   card.appendChild(p2);
   return card;
 }
 // Correction log for one time card (from the AuditLog)
-const CORR_LABEL = { INSERTED: 'Inserted', VOIDED: 'Voided', BY_ADMIN: 'Punched by admin', BREAK_WAIVED: 'Break: no break taken', BREAK_WAIVER_UNDONE: 'Break: undo no break taken',
+const CORR_LABEL = { INSERTED: 'Inserted', VOIDED: 'Removed', EDITED: 'Changed', BY_ADMIN: 'Punched by admin', BREAK_WAIVED: 'Break: no break taken', BREAK_WAIVER_UNDONE: 'Break: undo no break taken',
   PAID_ADDED: 'Paid hours added', PAID_VOIDED: 'Paid hours voided' };
 const PAID_LABEL = { HOLIDAY: 'Holiday', SICK: 'Sick', VACATION: 'Vacation', OTHER: 'Other', UNPAID: 'Unpaid leave' };
 
@@ -2380,25 +2416,41 @@ function fitPrintPages() {
 function unfitPrintPages() { document.querySelectorAll('#reports .tc-page1').forEach(function (p) { p.style.zoom = ''; }); }
 window.addEventListener('beforeprint', fitPrintPages);
 window.addEventListener('afterprint', unfitPrintPages);
-function renderCorrections(list) {
-  const box = el('div', { className: 'tc-corr' });
-  const counted = list.filter(function (c) { return c.counted; });
-  const ins = counted.filter(function (c) { return c.type === 'INSERTED'; }).length, vd = counted.length - ins;
-  const head = el('h4', { text: 'CORRECTIONS THIS PAY PERIOD — ' + counted.length + ' ' });
-  if (counted.length) head.appendChild(el('span', { text: '(' + ins + ' inserted, ' + vd + ' voided)' }));
-  box.appendChild(head);
-  if (!list.length) { box.appendChild(el('div', { className: 'none', text: 'No corrections this pay period.' })); return box; }
+// TCEDIT: the card shows NET corrections (insert-then-remove pairs hidden, an edit = one line).
+// "Show full history" (screen only) lists every step; the AuditLog itself is never changed.
+function corrTable(list, full) {
   const t = el('table');
   t.appendChild(el('thead', null, [el('tr', null, ['Done on', 'Change', 'Punch', 'Reason', 'By'].map(function (h) { return el('th', { text: h }); }))]));
   const tb = el('tbody'); t.appendChild(tb);
   list.forEach(function (c) {
     const isPaid = c.type === 'PAID_ADDED' || c.type === 'PAID_VOIDED';
-    const what = (CORR_LABEL[c.type] || c.type) + (c.type.indexOf('BREAK') === 0 || isPaid ? '' : ' ' + dirLabel(c.direction).toLowerCase());
-    const tr = addRow(tb, [saipanDateTime(c.doneAt), what, isPaid ? c.detail : saipanDateTime(c.punchTime), c.reason || '—', c.by],
+    const label = full && c.type === 'VOIDED' ? 'Voided' : (CORR_LABEL[c.type] || c.type);
+    const what = (c.pre && c.type === 'INSERTED' ? 'Pre-entered' : label) + (c.type.indexOf('BREAK') === 0 || isPaid ? '' : ' ' + dirLabel(c.direction).toLowerCase());
+    const punch = isPaid ? c.detail : (c.type === 'EDITED' && c.fromTime ? saipanDateTime(c.fromTime) + ' → ' + saipanTimeOnly(c.punchTime) : saipanDateTime(c.punchTime));
+    const tr = addRow(tb, [saipanDateTime(c.doneAt), what, punch, c.reason || '—', c.by],
       c.type === 'VOIDED' || c.type === 'PAID_VOIDED' ? 'void' : '');
     tr.children[3].className = 'why';
   });
-  box.appendChild(el('div', { className: 'table-wrap' }, [t]));
+  return el('div', { className: 'table-wrap' }, [t]);
+}
+function renderCorrections(list, history) {
+  const box = el('div', { className: 'tc-corr' });
+  const counted = list.filter(function (c) { return c.counted; });
+  const n = function (t) { return counted.filter(function (c) { return c.type === t; }).length; };
+  const head = el('h4', { text: 'CORRECTIONS THIS PAY PERIOD — ' + counted.length + ' ' });
+  if (counted.length) head.appendChild(el('span', { text: '(' + [n('INSERTED') + ' inserted', n('EDITED') + ' changed', n('VOIDED') + ' removed']
+    .filter(function (x) { return x.charAt(0) !== '0'; }).join(', ') + ')' }));
+  box.appendChild(head);
+  if (!list.length) box.appendChild(el('div', { className: 'none', text: 'No corrections this pay period.' }));
+  else box.appendChild(corrTable(list, false));
+  if (history && history.length > list.length) {
+    const hist = el('div', { className: 'no-print', style: 'display:none;margin-top:8px' }, [
+      el('div', { className: 'sub', style: 'margin:0 0 4px', text: 'Full history — every step, as recorded in the Audit Log (not printed).' }), corrTable(history, true)]);
+    const link = el('button', { className: 'btn btn-secondary btn-sm no-print', style: 'margin-top:8px', text: 'Show full history (' + history.length + ' steps)',
+      onclick: function () { const open = hist.style.display === 'none'; hist.style.display = open ? '' : 'none';
+        this.textContent = (open ? 'Hide' : 'Show') + ' full history (' + history.length + ' steps)'; } });
+    box.appendChild(link); box.appendChild(hist);
+  }
   return box;
 }
 function shortDate(dateStr) {
@@ -3776,6 +3828,74 @@ async function saveMyAccount() {
   endSession((r.data.usernameChanged && r.data.passwordChanged ? 'Username and password changed.'
     : r.data.usernameChanged ? 'Username changed to "' + r.data.username + '".' : 'Password changed.') + ' Please log in again with your new details.');
 }
+// ============================================================================
+// TCEDIT — edit an employee's punches straight from the time card
+// ============================================================================
+let TE = null;
+function openTcEdit(c, startDate, endDate) {
+  TE = { c: c, startDate: startDate, endDate: endDate };
+  document.getElementById('tcEditTitle').textContent = 'Edit time — ' + c.name + ' (ID ' + c.employeeId + ')';
+  document.getElementById('tcEditSub').textContent = 'Pay period ' + fmt(startDate) + ' – ' + fmt(endDate) +
+    '. Change a time, remove a punch, or add one. The original punch is kept in the history; every change is in the Audit Log.';
+  const tb = document.querySelector('#tcEditTable tbody'); tb.innerHTML = '';
+  const tz = function (iso) { const d = new Date(iso); return { date: d.toLocaleDateString('en-CA', { timeZone: TZ }), time: d.toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) }; };
+  const items = [];
+  (c.rows || []).forEach(function (r) {
+    if (r.timeIn && r.inRawId) items.push({ rawId: r.inRawId, dir: 'IN', iso: r.timeIn, day: r.date });
+    if (r.timeOut && r.outRawId) items.push({ rawId: r.outRawId, dir: 'OUT', iso: r.timeOut, day: r.date });
+  });
+  if (!items.length) emptyRow(tb, 5, 'No punches in this pay period — use "Add a punch" below.');
+  items.forEach(function (it) {
+    const v = tz(it.iso);
+    const d = el('input', { type: 'date', value: v.date, style: 'max-width:150px' }), t = el('input', { type: 'time', value: v.time, style: 'max-width:110px' });
+    const rm = el('input', { type: 'checkbox', title: 'Remove this punch' });
+    it.orig = v; it.inputs = { d: d, t: t, rm: rm };
+    const tr = addRow(tb, [shortDate(it.day), dirLabel(it.dir), saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { style: 'display:flex;gap:6px' }, [d, t]), rm]);
+    const mark = function () { tr.style.background = rm.checked ? '#fde8e8' : (d.value !== v.date || t.value !== v.time) ? '#fff7e6' : ''; };
+    d.oninput = t.oninput = rm.onchange = mark;
+  });
+  TE.items = items;
+  document.getElementById('teAddDir').value = ''; document.getElementById('teAddDate').value = startDate; document.getElementById('teAddTime').value = '';
+  const vs = document.getElementById('teAddVenue'); vs.innerHTML = '';
+  (VENUES || []).forEach(function (v) { vs.appendChild(el('option', { value: v.venueId, text: v.venueName || v.venueId })); });
+  if (c.defaultVenueId) vs.value = c.defaultVenueId;
+  document.getElementById('teReason').value = ''; clearMsg('teMsg');
+  openDlg('tcEditDlg');
+}
+async function saveTcEdit() {
+  const reason = teReason.value.trim();
+  const changes = [];
+  TE.items.forEach(function (it) {
+    const f = it.inputs;
+    if (f.rm.checked) changes.push({ kind: 'remove', it: it, text: 'Remove ' + dirLabel(it.dir) + ' ' + saipanTimeOnly(it.iso) + ' (' + shortDate(it.orig.date) + ')' });
+    else if (f.d.value !== it.orig.date || f.t.value !== it.orig.time) {
+      if (!f.d.value || !f.t.value) return;
+      changes.push({ kind: 'edit', it: it, date: f.d.value, time: f.t.value,
+        text: dirLabel(it.dir) + ' ' + it.orig.time + ' (' + shortDate(it.orig.date) + ') → ' + f.t.value + ' (' + shortDate(f.d.value) + ')' });
+    }
+  });
+  if (teAddDir.value) {
+    if (!teAddDate.value || !teAddTime.value) { setMsg('teMsg', false, 'Enter the date and time of the punch to add.'); return; }
+    changes.push({ kind: 'add', dir: teAddDir.value, date: teAddDate.value, time: teAddTime.value, venueId: teAddVenue.value,
+      text: 'Add ' + dirLabel(teAddDir.value) + ' ' + teAddTime.value + ' (' + shortDate(teAddDate.value) + ')' });
+  }
+  if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
+  if (reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for the correction.'); teReason.focus(); return; }
+  if (!confirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason)) return;
+  const errs = [];
+  for (const x of changes) {
+    let r;
+    if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason });
+    else if (x.kind === 'remove') r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
+    else r = await call('addMissedPunch', { employeeId: TE.c.employeeId, direction: x.dir, date: x.date, time: x.time, reason: reason, venueId: x.venueId });
+    if (!r.ok) errs.push(x.text + ': ' + r.error.message);
+  }
+  if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n'));
+  else closeDlg('tcEditDlg');
+  toast(errs.length ? (changes.length - errs.length) + ' of ' + changes.length + ' saved.' : 'Corrections saved.');
+  if (tcMode === 'arch' && ARCH.previewing) await previewCorrection(); else await loadReport(); // refresh the time card right away
+}
+
 // ---- kiosk announcements / policy ----
 let kcEditing = null;
 let kcVenueOptionsKey = '';
