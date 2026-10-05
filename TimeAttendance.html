@@ -703,7 +703,7 @@
         <p class="sub">Read-only check of every employee's Department / Position against the master lists: invalid combinations, values not in the lists, inactive assignments. <b>Nothing is changed.</b> The result is also saved in the <b>DeptPos_DataCheck</b> tab.</p>
         <div class="actions" style="align-items:center">
           <button class="btn btn-primary" onclick="run(this, runDeptPosCheck)">Run data check</button>
-          <select id="dpFilter" onchange="renderDataCheck()" style="max-width:240px"><option value="">All results</option><option>INVALID COMBINATION</option><option>NOT IN LIST</option><option>INACTIVE</option><option>BREAK NOT SET</option><option>BREAK DIFFERS</option><option>OK</option><option>HISTORICAL</option></select>
+          <select id="dpFilter" onchange="renderDataCheck()" style="max-width:240px"><option value="">All results</option><option>INVALID COMBINATION</option><option>NOT IN LIST</option><option>INACTIVE</option><option>POSSIBLE DUPLICATE</option><option>BREAK NOT SET</option><option>BREAK DIFFERS</option><option>OK</option><option>HISTORICAL</option></select>
         </div>
         <div id="dpSummary" class="st-sum" hidden></div>
         <div class="table-wrap" style="margin-top:10px">
@@ -717,7 +717,7 @@
         <div class="emp-search">
           <div style="flex:1;min-width:220px"><input id="aeSearch" placeholder="Search archived employee — name or ID" autocomplete="off" oninput="renderArchivedEmployees()"></div>
           <select id="aeFilter" onchange="renderArchivedEmployees()" style="max-width:200px">
-            <option value="">All statuses</option><option>Resigned</option><option>Terminated</option><option value="Inactive">Inactive (old status)</option>
+            <option value="">All statuses</option><option>Resigned</option><option>Terminated</option><option>Created in error</option><option value="Inactive">Inactive (old status)</option>
           </select>
           <button class="btn btn-secondary" onclick="aeSearch.value=''; aeFilter.value=''; renderArchivedEmployees();">Clear</button>
           <span class="sub" id="aeCount" style="margin:0"></span>
@@ -2954,11 +2954,19 @@ async function createEmployee() {
   if (!deptPosAllowed(empDept.value, empPos.value)) { setMsg('empMsg', false, 'Select a Position for ' + empDept.value + '.'); empPos.focus(); return; }
   if (!empPos.value) { setMsg('empMsg', false, 'Select the position.'); empPos.focus(); return; }
   if (!/^\d{4}$/.test(empPin.value.trim())) { setMsg('empMsg', false, 'The PIN must be exactly 4 digits.'); empPin.focus(); return; }
-  const result = await call('createEmployee', {
+  const body = {
     name: empName.value.trim(), pin: empPin.value.trim(), department: empDept.value.trim(),
     position: empPos.value.trim(), hireDate: empHire.value, defaultVenueId: empVenue.value,
     breakRule: empBreak.value, requiredHours: empHours.value, employmentStatus: empEmpStatus.value
-  });
+  };
+  let result = await call('createEmployee', body);
+  if (!result.ok && result.error.code === 'DUPLICATE_NAME') { // DUPNAME: same name already exists
+    if (!confirm('⚠️ ' + result.error.message + '\n\nOK = add as a NEW, different employee.\nCancel = do not add (use the existing record).')) {
+      setMsg('empMsg', false, 'Not added — an employee with this name already exists.'); return;
+    }
+    body.confirmDuplicateName = true;
+    result = await call('createEmployee', body);
+  }
   if (result.ok) {
     setMsg('empMsg', true, 'Added ' + result.data.name + '. Employee ID: ' + result.data.employeeId + ' (give this ID to the employee).');
     ['empName', 'empPin', 'empHire'].forEach(function (id) { document.getElementById(id).value = ''; });
@@ -2976,8 +2984,8 @@ async function refreshEmployees() {
   renderEmployees(result);
 }
 // EMPMGMT: statuses, search, table
-const EMPLOYEE_STATUSES = ['Active', 'On Leave', 'Furlough', 'Resigned', 'Terminated'];
-const STATUS_CHIP = { 'Active': '#1e9e4a', 'On Leave': '#b7791f', 'Furlough': '#7c3aed', 'Resigned': '#6b7280', 'Terminated': '#c62828', 'Inactive': '#6b7280' };
+const EMPLOYEE_STATUSES = ['Active', 'On Leave', 'Furlough', 'Resigned', 'Terminated', 'Created in error'];
+const STATUS_CHIP = { 'Active': '#1e9e4a', 'On Leave': '#b7791f', 'Furlough': '#7c3aed', 'Resigned': '#6b7280', 'Terminated': '#c62828', 'Inactive': '#6b7280', 'Created in error': '#9a3412' };
 function statusLabel(st) { return st === 'Inactive' ? 'Inactive (old status)' : (st || '—'); }
 function renderEmployees(result) {
   result = result || { ok: true, data: EMPLOYEES };
@@ -3068,7 +3076,7 @@ function openEmpDialog(e) {
   edReason.value = ''; document.getElementById('edReasonWrap').style.display = 'none';
   document.getElementById('edPinFields').style.display = 'none'; document.getElementById('edPinToggle').style.display = '';
   edPin1.value = ''; edPin2.value = ''; clearMsg('edPinMsg');
-  document.getElementById('edArchiveBox').style.display = ['Resigned', 'Terminated', 'Inactive'].indexOf(e.status) !== -1 ? '' : 'none';
+  document.getElementById('edArchiveBox').style.display = ['Resigned', 'Terminated', 'Inactive', 'Created in error'].indexOf(e.status) !== -1 ? '' : 'none';
   clearMsg('edMsg');
   openDlg('empDlg');
 }
@@ -3105,7 +3113,11 @@ async function saveEmpDialog() {
     if (esChanged) payload.employmentStatus = edEmpStatus.value;
     payload.reason = edReason.value.trim();
   }
-  const r = await call('updateEmployee', payload);
+  let r = await call('updateEmployee', payload);
+  if (!r.ok && r.error.code === 'DUPLICATE_NAME') { // DUPNAME: renamed to a name that already exists
+    if (!confirm('⚠️ ' + r.error.message + '\n\nOK = save anyway (different person).\nCancel = do not save.')) { setMsg('edMsg', false, 'Not saved.'); return; }
+    payload.confirmDuplicateName = true; r = await call('updateEmployee', payload);
+  }
   if (!r.ok) { setMsg('edMsg', false, r.error.message); return; }
   closeDlg('empDlg');
   setMsg('empListMsg', true, e.name + ' updated.');
@@ -3443,8 +3455,8 @@ function renderDataCheck() {
   const s = d.summary;
   sm.appendChild(el('div', null, [el('b', { text: 'DATA CHECK (read-only) — nothing was changed. ' }),
     s.total + ' employees: ' + s.OK + ' OK, ' + s['INVALID COMBINATION'] + ' INVALID COMBINATION, ' + s['NOT IN LIST'] + ' NOT IN LIST, ' +
-    s.INACTIVE + ' INACTIVE, ' + (s['BREAK NOT SET'] || 0) + ' BREAK NOT SET, ' + (s['BREAK DIFFERS'] || 0) + ' BREAK DIFFERS, ' + s.HISTORICAL + ' HISTORICAL. Generated ' + saipanDateTime(d.generatedAt) + '.']));
-  const colors = { 'OK': '#1e9e4a', 'INVALID COMBINATION': '#c62828', 'NOT IN LIST': '#d97706', 'INACTIVE': '#7c3aed', 'BREAK DIFFERS': '#0e7490', 'BREAK NOT SET': '#b45309', 'HISTORICAL': '#6b7280' };
+    s.INACTIVE + ' INACTIVE, ' + (s['POSSIBLE DUPLICATE'] || 0) + ' POSSIBLE DUPLICATE, ' + (s['BREAK NOT SET'] || 0) + ' BREAK NOT SET, ' + (s['BREAK DIFFERS'] || 0) + ' BREAK DIFFERS, ' + s.HISTORICAL + ' HISTORICAL. Generated ' + saipanDateTime(d.generatedAt) + '.']));
+  const colors = { 'OK': '#1e9e4a', 'INVALID COMBINATION': '#c62828', 'NOT IN LIST': '#d97706', 'INACTIVE': '#7c3aed', 'BREAK DIFFERS': '#0e7490', 'BREAK NOT SET': '#b45309', 'POSSIBLE DUPLICATE': '#be185d', 'HISTORICAL': '#6b7280' };
   const bd = d.report.filter(function (x) { return x.status === 'BREAK DIFFERS'; });
   if (bd.length) sm.appendChild(el('div', { style: 'margin-top:8px' }, [
     el('button', { className: 'btn btn-secondary btn-sm', text: 'Use department default break for these ' + bd.length + ' employee(s)…',
