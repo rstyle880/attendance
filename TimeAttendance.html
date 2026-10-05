@@ -1194,7 +1194,21 @@ function speak(text) {
 if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
 
 let audioCtx = null;
-function playAlarm() {
+// ALERTVOICE: the spoken words match the alert (was always "Missed clock out")
+function alertSpeech(list) {
+  if (!list || !list.length) return 'Attention.';
+  if (list.length > 1) {
+    const types = list.map(function (a) { return a.type; });
+    const same = types.every(function (t) { return t === types[0]; });
+    if (!same) return 'Attention. ' + list.length + ' attendance alerts.';
+  }
+  const t = list[0].type, k = list.length;
+  const say = { MISSING_IN: ['Missed clock in.', 'missed clock ins.'], LONG_BREAK: ['Break not ended.', 'breaks not ended.'],
+    OVERDUE_OUT: ['Possible missed clock out.', 'possible missed clock outs.'], PIN_LOCKED: ['Employee locked out.', 'employees locked out.'] }[t]
+    || ['Missed clock out.', 'missed clock outs.'];
+  return 'Attention. ' + (k > 1 ? k + ' ' + say[1] : say[0]);
+}
+function playAlarm(list) {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -1215,7 +1229,8 @@ function playAlarm() {
         });
       }
     }
-    setTimeout(function () { speak('Attention. Missed clock out.'); }, 2900);
+    const words = alertSpeech(list);
+    setTimeout(function () { speak(words); }, 2900);
   } catch (e) {}
 }
 
@@ -1937,7 +1952,7 @@ function showAlertPopup(list) {
   overlay.classList.add('open');
   // Sound only when the pop-up first appears or a NEW alert arrives (not every 2 minutes).
   const isNew = !wasOpen || ids.split(',').some(function (id) { return prevIds.split(',').indexOf(id) === -1; });
-  if (isNew) playAlarm();
+  if (isNew) playAlarm(list);
 }
 function closeAlertPopup() { const o = document.getElementById('alertOverlay'); o.classList.remove('open'); o.dataset.ids = ''; }
 function snoozeAlerts() {
