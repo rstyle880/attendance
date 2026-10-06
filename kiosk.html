@@ -1249,6 +1249,7 @@ async function syncQueue() {
           employeeId: item.employeeId, pin: item.pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret });
       } catch (e) { break; }
       if (!result.ok && result.error && result.error.code === 'TERMINAL_INVALID') break;
+      if (!result.ok && result.error && (result.error.code === 'BUSY' || result.error.code === 'INTERNAL_ERROR')) break; // C2: temporary — keep it, retry next sync
       if (!result.ok) {
         const rej = readQueue(LS.rejected);
         rej.push({ employeeId: item.employeeId, direction: item.direction, originalTimestamp: item.originalTimestamp, reason: result.error ? result.error.message : 'Rejected' });
