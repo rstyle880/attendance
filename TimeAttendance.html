@@ -849,6 +849,9 @@
         <div class="table-wrap" style="margin-top:10px">
           <table id="stTable"><thead><tr><th>Tab</th><th class="num">Rows</th><th class="num">Cells</th><th class="num">Share of limit</th></tr></thead><tbody></tbody></table>
         </div>
+        <h3 style="margin:16px 0 6px">Slowest actions (last 24 hours)</h3>
+        <p class="sub" style="margin-top:0">How long the server takes for each kind of request. Most should be under 3 seconds; anything regularly over 10 seconds is worth checking.</p>
+        <div class="table-wrap"><table id="perfTable"><thead><tr><th>Action</th><th class="num">Requests</th><th class="num">Average</th><th class="num">Slowest</th></tr></thead><tbody></tbody></table></div>
         <div class="actions"><button class="btn btn-secondary btn-sm" onclick="run(this, function () { return loadStorage(true); })">Check again</button></div>
       </div>
     </section>
@@ -1877,7 +1880,7 @@ function setSnoozes(s) { try { localStorage.setItem('alert_snooze', JSON.stringi
 
 async function checkAlerts(fromUser, pre) {
   if (!sessionToken) return;
-  const result = pre && Array.isArray(pre.alerts) ? { ok: true, data: pre } : await call('listAttendanceAlerts', {}, { bg: !fromUser });
+  const result = pre && Array.isArray(pre.alerts) ? { ok: true, data: pre } : await call('listAttendanceAlerts', {}, { bg: !fromUser }); // PERF2: background polls share a 30-s result (server side)
   if (!result.ok || !result.data || !Array.isArray(result.data.alerts)) { if (fromUser) setAlertTable(result.ok ? { ok: false, error: { message: 'Could not load alerts. Please try again.' } } : result); return; }
   lastAlerts = result.data.alerts;
   document.getElementById('alertBadge').textContent = lastAlerts.length ? String(lastAlerts.length) : '';
@@ -2575,14 +2578,14 @@ async function loadDashboard(pre, bg) {
   if (!r.ok) { document.getElementById('dashUpdated').textContent = r.error.message; return; }
   dashData = r.data; if (k.ok) kioskInfo = k.data; dashLoadedAt = Date.now();
   document.getElementById('dashUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
-  document.getElementById('dLiveLabel').textContent = dashData.isToday ? 'Live (every minute)' : 'Past day';
+  document.getElementById('dLiveLabel').textContent = dashData.isToday ? 'Live (every 2 minutes)' : 'Past day';
   renderDashboard();
   clearInterval(dashTimer);
   if (dashData.isToday) dashTimer = setInterval(function () {
     // LOGIN FIX: no refresh while this browser tab is hidden / minimized (alerts still check every 2 min)
     if (document.visibilityState === 'hidden') return;
     if (document.getElementById('dashboard').classList.contains('active') && sessionToken) loadDashboard(null, true);
-  }, 60 * 1000);
+  }, 120 * 1000); // PERF2: every 2 minutes (was 1)
   clearInterval(dashTick);
   dashTick = setInterval(renderWorking, 15 * 1000); // keep durations ticking between refreshes
 }
@@ -3585,6 +3588,15 @@ async function loadStorage(fresh) {
   d.tabs.forEach(function (t) {
     const tr = addRow(tbody, [t.name, n(t.rows), n(t.cells), (Math.round(t.cells / d.cellLimit * 1000) / 10) + '%']);
     [1, 2, 3].forEach(function (i) { tr.children[i].className = 'num'; });
+  });
+  // PERF2 (D): slowest actions in the last 24 hours
+  const pb = document.querySelector('#perfTable tbody'); pb.innerHTML = '';
+  const sec = function (ms) { return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s'; };
+  if (!d.perf || !d.perf.length) emptyRow(pb, 4, 'No timing data yet (it builds up as the system is used).');
+  (d.perf || []).forEach(function (x) {
+    const tr = addRow(pb, [x.action, n(x.count), sec(x.avgMs), sec(x.maxMs)]);
+    [1, 2, 3].forEach(function (i) { tr.children[i].className = 'num'; });
+    if (x.avgMs > 10000) tr.style.background = '#fde8e8'; else if (x.avgMs > 5000) tr.style.background = '#fff7e6';
   });
 }
 
