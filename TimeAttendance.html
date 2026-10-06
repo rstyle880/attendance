@@ -1203,7 +1203,7 @@ function alertSpeech(list) {
     if (!same) return 'Attention. ' + list.length + ' attendance alerts.';
   }
   const t = list[0].type, k = list.length;
-  const say = { MISSING_IN: ['Missed clock in.', 'missed clock ins.'], LONG_BREAK: ['Break not ended.', 'breaks not ended.'],
+  const say = { EMP_REPORT: ['Employee reported a problem.', 'employee reports.'], MISSING_IN: ['Missed clock in.', 'missed clock ins.'], LONG_BREAK: ['Break not ended.', 'breaks not ended.'],
     OVERDUE_OUT: ['Possible missed clock out.', 'possible missed clock outs.'], PIN_LOCKED: ['Employee locked out.', 'employees locked out.'] }[t]
     || ['Missed clock out.', 'missed clock outs.'];
   return 'Attention. ' + (k > 1 ? k + ' ' + say[1] : say[0]);
@@ -1894,6 +1894,7 @@ async function checkAlerts(fromUser, pre) {
 }
 
 function describeAlert(a) {
+  if (a.type === 'EMP_REPORT') return 'Reported from their phone on ' + saipanDateTime(a.time) + (a.reportDate ? ' (about ' + shortDate(a.reportDate) + ')' : '') + ': “' + a.message + '”'; // MYREC
   if (a.type === 'PIN_LOCKED') {
     const kiosk = (kioskInfo || []).find(function (t) { return t.terminalId === a.terminalId; });
     const where = (kiosk ? kiosk.terminalName + ' (' + venueName(a.venueId) + ')' : (a.venueId ? venueName(a.venueId) + ' kiosk' : 'the kiosk'));
@@ -1919,7 +1920,7 @@ function setAlertTable(result) {
   result.data.alerts.forEach(function (a) {
     addRow(tbody, [
       el('div', null, [el('b', { text: a.name }), el('div', { className: 'sub', style: 'margin:0', text: 'ID ' + a.employeeId + (a.department ? ', ' + a.department : '') })]),
-      a.type === 'MISSING_IN' ? 'No clock-in' : a.type === 'LONG_BREAK' ? 'Break not ended' : a.type === 'OVERDUE_OUT' ? 'Still clocked in (overdue)'
+      a.type === 'EMP_REPORT' ? 'Employee report' : a.type === 'MISSING_IN' ? 'No clock-in' : a.type === 'LONG_BREAK' ? 'Break not ended' : a.type === 'OVERDUE_OUT' ? 'Still clocked in (overdue)'
         : a.type === 'PIN_LOCKED' ? (a.stillLocked ? 'PIN locked' : 'PIN lock (expired)') : 'No clock-out',
       saipanDateTime(a.time), String(a.hoursAgo), venueName(a.venueId),
       alertActions(a, true)
@@ -1933,7 +1934,7 @@ function showAlertPopup(list) {
   const prevIds = overlay.dataset.ids || '';
   const ids = list.map(function (a) { return a.rawId; }).join(',');
   document.getElementById('alertTitle').textContent = list.length === 1
-    ? (list[0].type === 'LONG_BREAK' ? 'Break not ended' : list[0].type === 'OVERDUE_OUT' ? 'Possible missed clock-out'
+    ? (list[0].type === 'EMP_REPORT' ? 'Employee reported a problem' : list[0].type === 'LONG_BREAK' ? 'Break not ended' : list[0].type === 'OVERDUE_OUT' ? 'Possible missed clock-out'
       : list[0].type === 'PIN_LOCKED' ? 'Employee locked out'
       : 'Missed ' + (list[0].type === 'MISSING_IN' ? 'clock-in' : 'clock-out'))
     : list.length + ' attendance alerts';
@@ -1977,6 +1978,11 @@ function toast(text) {
 function alertActions(a, small) {
   const sz = small ? ' btn-sm' : '';
   const wrap = el('div', { className: small ? '' : 'row-actions', style: small ? 'display:flex;gap:6px;flex-wrap:wrap' : '' });
+  if (a.type === 'EMP_REPORT') { // MYREC: open the time card to fix, then mark resolved
+    wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: 'Open time card', onclick: function () { openReportCard(a); } }));
+    wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Mark resolved', onclick: function () { resolveReport(this, a); } }));
+    return wrap;
+  }
   if (a.type !== 'PIN_LOCKED') {
     wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: small ? 'Fix' : 'Fix now', onclick: function () { fixAlert(a); } }));
     return wrap;
@@ -1986,6 +1992,24 @@ function alertActions(a, small) {
   wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Reset PIN', onclick: function () { lockAction(this, a, 'reset'); } }));
   if (a.stillLocked) wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Dismiss', onclick: function () { lockAction(this, a, 'dismiss'); } }));
   return wrap;
+}
+// MYREC: employee reports from the phone page
+function openReportCard(a) {
+  closeAlertPopup();
+  const e = EMPLOYEES.find(function (x) { return x.employeeId === String(a.employeeId); });
+  showTab('reports'); if (typeof tcView === 'function') tcView('live');
+  setPeriod(SERVER_PERIODS && a.reportDate && a.reportDate < SERVER_PERIODS.current.start ? -1 : 0);
+  if (e) { reportEmp = e; const rs = document.getElementById('repSearch'); if (rs) rs.value = e.name + ' (' + e.employeeId + ')'; }
+  loadReport();
+}
+async function resolveReport(btn, a) {
+  const note = prompt('Mark this report from ' + a.name + ' as resolved?\n\n“' + a.message + '”\n\nNote (optional, e.g. "Added clock-out 2:30 PM"):');
+  if (note === null) return;
+  await run(btn, async function () {
+    const r = await call('resolveEmployeeReport', { reportId: a.rawId, note: note.trim() });
+    if (!r.ok) { alert(r.error.message); return; }
+    toast('Report resolved.'); checkAlerts(true);
+  });
 }
 async function lockAction(btn, a, what) {
   let payload = { employeeId: a.employeeId }, action, done;
