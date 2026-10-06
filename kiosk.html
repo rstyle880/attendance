@@ -727,6 +727,7 @@ async function submitPin() {
   $('msgPin').innerHTML = '<span class="spinner"></span>' + (mode === 'RECORDS' ? 'Loading your records…' : 'Processing…');
   const c = getConfig();
   const body = { employeeId: employeeId, pin: pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
+  if (mode === 'IN' || mode === 'OUT') body.localId = c.terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6); // H3: same ID online and offline
   // AUTOBREAK: BREAK starts the break in ONE request; only if already on break /
   // paused does the server send back the choices (Pause / Resume / End)
   const action = { IN: 'clockIn', OUT: 'clockOut', BREAK: 'kioskBreakAction', RECORDS: 'kioskMyRecords' }[mode];
@@ -1228,7 +1229,7 @@ function readQueue(key) { try { return JSON.parse(lsGet(key, '[]')) || []; } cat
 function writeQueue(key, q) { lsSet(key, JSON.stringify(q)); }
 function queueOffline(punch, dir) {
   const q = readQueue(LS.queue);
-  const localId = getConfig().terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+  const localId = punch.localId || (getConfig().terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6)); // H3: reuse the online punch's ID
   q.push({ localId: localId,
     direction: dir, originalTimestamp: new Date(nowMs()).toISOString(), employeeId: punch.employeeId, pin: punch.pin }); // AUDIT2 B1: corrected time
   writeQueue(LS.queue, q); updateStatusBar();
