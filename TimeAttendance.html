@@ -1681,8 +1681,14 @@ function resolveEmployee(text) {
   if (byId) return byId;
   const exact = EMPLOYEES.filter(function (e) { return String(e.name).trim().toLowerCase() === q; });
   if (exact.length === 1) return exact[0];
-  const partial = EMPLOYEES.filter(function (e) { return String(e.name).toLowerCase().indexOf(q) !== -1; });
+  const partial = EMPLOYEES.filter(function (e) { return empMatches(e, q); });
   return partial.length === 1 ? partial[0] : null;
+}
+// Every typed word must appear in the name or ID (any order; "(1234)" label ok).
+function empMatches(e, q) {
+  const hay = (e.name + ' ' + e.employeeId).toLowerCase();
+  return String(q).toLowerCase().replace(/[()]/g, ' ').split(/\s+/).filter(Boolean)
+    .every(function (w) { return hay.indexOf(w) !== -1; });
 }
 
 function makePicker(inputId, listId, onPick, onClear) {
@@ -1703,7 +1709,7 @@ function makePicker(inputId, listId, onPick, onClear) {
     const q = input.value.trim().toLowerCase();
     list.innerHTML = '';
     items = EMPLOYEES.filter(function (e) {
-      return !q || String(e.name).toLowerCase().indexOf(q) !== -1 || e.employeeId.indexOf(q) !== -1;
+      return !q || empMatches(e, q);
     }).sort(function (a, b) {
       if ((a.status === 'Active') !== (b.status === 'Active')) return a.status === 'Active' ? -1 : 1;
       return String(a.name).localeCompare(String(b.name));
