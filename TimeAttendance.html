@@ -1328,6 +1328,19 @@ function shapeProblem(action, data) {
 // Reads are safe to repeat; writes are never retried automatically (no double punches).
 const RETRYABLE = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1 };
 const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
+// IDEMP: each save click gets ONE request ID; a retry re-sends the SAME ID, so the server runs
+// the save at most once and answers a repeat with the original answer. Saves are retried only
+// when the server has said it understands request IDs (adminBootstrap → idempotency: true).
+let IDEMP_OK = false;
+const SAVE_ACTIONS = /^(createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount)$/;
+const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
+function newRequestId() {
+  const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
+  const abc = 'abcdefghijklmnopqrstuvwxyz0123456789', rnd = new Uint8Array(16);
+  crypto.getRandomValues(rnd);
+  let s = ''; for (let i = 0; i < 16; i++) s += abc.charAt(rnd[i] % 36);
+  return 'REQ-' + day + '-' + s;
+}
 
 // opts.bg = background refresh (auto-polling): does NOT count as activity (IDLE I2)
 async function call(action, payload, opts) {
@@ -1336,10 +1349,16 @@ async function call(action, payload, opts) {
   const bg = !!(opts && opts.bg);
   const body = Object.assign({}, payload || {}, { token: sessionToken });
   if (bg) body.bg = true; else lastServerTouch = Date.now();
+  const idemp = IDEMP_OK && SAVE_ACTIONS.test(action);
+  if (idemp) body.requestId = newRequestId(); // IDEMP: once per click — never a new one on retry
   let result = await postApi(url, action, body);
   if (!result.ok && result.error && RETRYABLE[result.error.code] && READ_ACTIONS.test(action)) {
     await new Promise(function (r) { setTimeout(r, 1500); });
     result = await postApi(url, action, body); // FIX14 #1: one automatic retry for reads
+  }
+  for (let i = 1; idemp && i <= 3 && !result.ok && result.error && SAVE_RETRY[result.error.code]; i++) {
+    await new Promise(function (r) { setTimeout(r, 2000 * i); }); // IDEMP: 2 s, 4 s, 6 s
+    result = await postApi(url, action, body); // the SAME body = the same request ID
   }
   if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') {
     endSession(result.error.message || 'Session expired. Please log in again.');
@@ -1482,6 +1501,7 @@ async function enterApp() {
     applyDeptPosMaster(bs.data.deptPos);
       kioskFetchedAt = Date.now();
       bootData = bs.data;
+      IDEMP_OK = !!bs.data.idempotency; // IDEMP: only a server that understands request IDs gets save retries
     } else {
       res = await Promise.all([loadEmployees(), loadVenues()]); // bootstrap failed: load one by one
     }
