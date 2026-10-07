@@ -613,6 +613,13 @@ function playAlarm() {
 // API
 // ============================================================================
 class NetworkError extends Error {}
+// RESPCHECK: what a real success answer contains, per action. Anything else (e.g. Google sending back the
+// health-check answer) is handled like a lost answer — never shown as a completed punch.
+const ANSWER_OK = { clockIn: function (d) { return !!d.rawId; }, clockOut: function (d) { return !!d.rawId; }, syncOfflinePunch: function (d) { return !!d.rawId; },
+  uploadPunchPhoto: function (d) { return !!d.rawId; }, kioskBreakAction: function (d) { return !!(d.direction || d.needChoice); },
+  kioskBreakStatus: function (d) { return Array.isArray(d.options); }, kioskMyRecords: function (d) { return Array.isArray(d.rows); },
+  kioskHome: function (d) { return !!d.terminalId; }, kioskPing: function (d) { return !!d.terminalId; },
+  kioskOnBreak: function (d) { return Array.isArray(d.items); }, kioskContent: function (d) { return Array.isArray(d); } };
 async function api(action, payload, timeoutMs) {
   const c = getConfig();
   let res;
@@ -624,7 +631,10 @@ async function api(action, payload, timeoutMs) {
   } catch (e) { throw new NetworkError(ctl && ctl.signal.aborted ? 'timeout' : 'offline'); }
   finally { if (timer) clearTimeout(timer); }
   if (!res.ok) throw new NetworkError('HTTP ' + res.status);
-  try { return await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
+  let out;
+  try { out = await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
+  if (out && out.ok && ANSWER_OK[action] && !(out.data && ANSWER_OK[action](out.data))) throw new NetworkError('Bad response'); // RESPCHECK
+  return out;
 }
 
 // ============================================================================
