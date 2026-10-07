@@ -2981,6 +2981,17 @@ function shiftText(e) {
   return fmt12(e.shiftStart) + ' to ' + fmt12(e.shiftEnd) + (dtxt ? ' (' + dtxt + ')' : ' (no days set)');
 }
 
+// ADDFIX: the server saved the employee but Google lost the answer (404 page / network / timeout).
+// Never re-send the add — read the list and look for the new employee instead.
+async function findAddedEmployee(name, before) {
+  const unconfirmed = { ok: false, error: { code: 'UNCONFIRMED', message: 'The server did not confirm the new employee. ' +
+    'Please check the employee list (refresh) before adding again, so the employee is not added twice.' } };
+  if (!Object.keys(before).length) return unconfirmed; // nothing to compare with
+  const r = await call('listEmployees', { includeInactive: true });
+  if (!r.ok) return unconfirmed;
+  const found = r.data.filter(function (e) { return !before[String(e.employeeId)] && String(e.name).trim() === name; });
+  return found.length === 1 ? { ok: true, data: found[0] } : unconfirmed;
+}
 async function createEmployee() {
   if (!empName.value.trim()) { setMsg('empMsg', false, 'Enter the name.'); empName.focus(); return; }
   if (!empDept.value) { setMsg('empMsg', false, 'Select the department.'); empDept.focus(); return; }
@@ -2992,13 +3003,16 @@ async function createEmployee() {
     position: empPos.value.trim(), hireDate: empHire.value, defaultVenueId: empVenue.value,
     breakRule: empBreak.value, requiredHours: empHours.value, employmentStatus: empEmpStatus.value
   };
+  const before = {}; EMPLOYEES.forEach(function (e) { before[String(e.employeeId)] = true; }); // ADDFIX
   let result = await call('createEmployee', body);
+  if (!result.ok && RETRYABLE[result.error.code]) result = await findAddedEmployee(body.name, before); // ADDFIX: answer lost
   if (!result.ok && result.error.code === 'DUPLICATE_NAME') { // DUPNAME: same name already exists
     if (!confirm('⚠️ ' + result.error.message + '\n\nOK = add as a NEW, different employee.\nCancel = do not add (use the existing record).')) {
       setMsg('empMsg', false, 'Not added — an employee with this name already exists.'); return;
     }
     body.confirmDuplicateName = true;
     result = await call('createEmployee', body);
+    if (!result.ok && RETRYABLE[result.error.code]) result = await findAddedEmployee(body.name, before); // ADDFIX
   }
   if (result.ok) {
     setMsg('empMsg', true, 'Added ' + result.data.name + '. Employee ID: ' + result.data.employeeId + ' (give this ID to the employee).');
