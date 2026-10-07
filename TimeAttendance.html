@@ -1283,7 +1283,8 @@ async function postApiNow(url, action, payload) {
     const bad = parsed && parsed.ok ? shapeProblem(action, parsed.data) : '';
     if (bad) {
       console.warn('[attendance] unexpected answer for "' + action + '": ' + bad, parsed);
-      return { ok: false, error: { code: 'BAD_SHAPE', message: 'The server sent an unexpected answer (' + action + '). Please try again.' } };
+      return { ok: false, error: { code: 'BAD_SHAPE', message: READ_ACTIONS.test(action) ? 'The server sent an unexpected answer (' + action + '). Please try again.'
+        : 'The server\'s answer could not be confirmed. Please refresh and check whether it was saved before trying again.' } };
     }
     return parsed;
   }
@@ -1296,6 +1297,7 @@ async function postApiNow(url, action, payload) {
 }
 
 // FIX14 #1/#2: what each read action must return. Anything else = retry, never crash.
+const has = function () { const keys = arguments; return function (d) { return !!d && Array.prototype.every.call(keys, function (k) { return d[k] !== undefined; }); }; };
 const SHAPES = {
   listEmployees: 'array', listVenues: 'array', listTerminals: 'array', listRawAttendance: 'array',
   listAttendanceAlerts: function (d) { return d && Array.isArray(d.alerts); },
@@ -1303,7 +1305,19 @@ const SHAPES = {
   adminBootstrap: function (d) { return d && Array.isArray(d.employees) && Array.isArray(d.venues) && Array.isArray(d.terminals); },
   timecardReport: function (d) { return d && Array.isArray(d.cards); },
   getAttendanceSummary: function (d) { return d && Array.isArray(d.employees); },
-  listKioskContent: function (d) { return d && Array.isArray(d.items); }
+  listKioskContent: function (d) { return d && Array.isArray(d.items); },
+  // RESPCHECK: a save only counts as done if the answer is THAT save's answer (a stray { ok: true } is not)
+  createEmployee: has('employeeId', 'name'), updateEmployee: has('employeeId'), archiveEmployee: has('employeeId'), unarchiveEmployee: has('employeeId'),
+  unlockEmployeePin: has('unlocked'), createVenue: has('venueId'), registerTerminal: has('terminalId', 'secret'),
+  setTerminalButtonSound: has('buttonSound'), setTerminalCamera: has('camera'), removeTerminal: has('terminalId', 'status'),
+  addMissedPunch: has('rawId'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'),
+  addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
+  openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
+  setupDeptPosMasters: has('departments', 'positions'), addDepartment: has('departments', 'positions'), addPosition: has('departments', 'positions'),
+  updateDepartment: has('departments', 'positions'), updatePosition: has('departments', 'positions'), setDepartmentStatus: has('departments', 'positions'),
+  setPositionStatus: has('departments', 'positions'), deptPosDataCheck: has('summary'), setupComputationRules: has('versions'),
+  saveComputationRuleVersion: has('versions'), cancelComputationRuleVersion: has('versions'), previewComputationRules: has('token'),
+  applyDeptDefaultBreaks: has('updated'), saveKioskContent: has('id'), removeKioskContent: has('id'), updateMyAccount: has('loggedOut')
 };
 function shapeProblem(action, data) {
   const want = SHAPES[action];
@@ -1473,6 +1487,10 @@ async function enterApp() {
     }
     if (!repStart.value) setPeriod(0);
     showTab(tab); // now load that menu's data
+    if (!bs.ok) { // FALLBACK: what adminBootstrap would have given (after the menu's own requests)
+      call('listDeptPos', {}).then(function (r) { if (r.ok) applyDeptPosMaster(r.data); });
+      call('payPeriods', {}).then(function (r) { if (r.ok) applyServerPeriods(r.data); });
+    }
     restoreClockEmployee();
   } catch (e) {
     console.warn('[attendance] start-up problem', e);
