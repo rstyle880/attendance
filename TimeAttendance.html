@@ -913,12 +913,12 @@
           <h3>Part-Time employees</h3>
           <p class="sub">Part-Time is a separate classification (not an Employment Status). It is used only by "Exclude Part-Time" when processing a holiday.</p>
           <div class="grid">
-            <div><label for="ptEmp">Employee</label><select id="ptEmp"></select></div>
+            <div><label for="ptEmp">Employee</label><select id="ptEmp" onchange="ptSync()"></select></div>
             <div><label for="ptReason">Reason</label><input id="ptReason" placeholder="e.g. works 20 hours a week"></div>
           </div>
           <div class="actions">
-            <button class="btn btn-secondary" onclick="run(this, function () { return setPartTimeUI(true); })">Mark Part-Time</button>
-            <button class="btn btn-secondary" onclick="run(this, function () { return setPartTimeUI(false); })">Remove Part-Time</button>
+            <button class="btn btn-secondary" id="ptMark" onclick="run(this, function () { return setPartTimeUI(true); }).then(ptSync)" disabled>Mark Part-Time</button>
+            <button class="btn btn-secondary" id="ptRemove" onclick="run(this, function () { return setPartTimeUI(false); }).then(ptSync)" disabled>Remove Part-Time</button>
           </div>
           <div id="ptMsg" class="msg"></div>
           <div class="sub" id="ptList"></div>
@@ -1661,6 +1661,7 @@ function endSession(message) {
   stopAlertPolling(); clearInterval(dashTimer); clearInterval(dashTick);
   try { sessionStorage.removeItem('admin_session'); sessionStorage.removeItem('admin_last_activity'); } catch (e) {}
   resetTimeCardsView(); // TCCLEAR: the next login starts with an empty Time Cards page
+  ptReset_(); // PT PICKER: no employee, reason or enabled button carried past the session
   closeAlertPopup();
   document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { o.classList.remove('open'); });
   document.getElementById('idleWarn').classList.remove('open');
@@ -1753,9 +1754,12 @@ function renderHolidays() {
       box.appendChild(el('label', { className: 'hp-opt' }, [c, ' ' + dep]));
     });
   }
-  const pe = document.getElementById('ptEmp'), pk = pe.value; pe.innerHTML = '';
+  // PT PICKER (V1): the list starts blank — an employee must be chosen by hand; a choice is kept only within the same login
+  const pe = document.getElementById('ptEmp'), pk = pe.dataset.gen === String(SESSION_GEN) ? pe.value : ''; pe.innerHTML = '';
+  pe.appendChild(el('option', { value: '', text: 'Select employee...' }));
   EMPLOYEES.forEach(function (e) { pe.appendChild(el('option', { value: e.employeeId, text: e.name + ' (' + e.employeeId + ')' + (HOL.partTime[e.employeeId] ? ' · Part-Time' : '') })); });
-  if (pk) pe.value = pk;
+  pe.value = pk && EMPLOYEES.some(function (e) { return e.employeeId === pk; }) ? pk : ''; pe.dataset.gen = String(SESSION_GEN);
+  ptSync();
   const pts = Object.keys(HOL.partTime);
   document.getElementById('ptList').textContent = pts.length ? 'Part-Time now: ' + pts.map(function (id) {
     const e = EMPLOYEES.find(function (x) { return x.employeeId === id; }); return e ? e.name + ' (' + id + ')' : id; }).join(', ') : 'Nobody is marked Part-Time.';
@@ -1804,12 +1808,20 @@ async function holCancel(h) {
   if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
   setMsg('holCalMsg', true, 'Holiday cancelled.'); await loadHolidays();
 }
+// PT PICKER (V1): Mark / Remove Part-Time only with an employee chosen, one save at a time (PT_SAVING), and only for the
+// list filled under THIS login (dataset.gen = SESSION_GEN); the end of a session clears it at once (ptReset_ from endSession)
+let PT_SAVING = false;
+function ptSync() { const off = !document.getElementById('ptEmp').value || PT_SAVING; document.getElementById('ptMark').disabled = off; document.getElementById('ptRemove').disabled = off; }
+function ptReset_() { const pe = document.getElementById('ptEmp'); pe.value = ''; pe.dataset.gen = ''; document.getElementById('ptReason').value = ''; ptSync(); }
 async function setPartTimeUI(on) {
-  const id = document.getElementById('ptEmp').value, why = document.getElementById('ptReason').value.trim();
-  if (!id) return;
-  const r = await call('setEmployeePartTime', { employeeId: id, partTime: on, reason: why });
-  if (!r.ok) { setMsg('ptMsg', false, r.error.message); return; }
-  setMsg('ptMsg', true, on ? 'Marked Part-Time.' : 'No longer Part-Time.'); document.getElementById('ptReason').value = ''; await loadHolidays();
+  const pe = document.getElementById('ptEmp'), id = pe.value, why = document.getElementById('ptReason').value.trim();
+  if (!id || PT_SAVING || pe.dataset.gen !== String(SESSION_GEN)) return; // nothing chosen, a save already on its way, or a list from an earlier login
+  PT_SAVING = true; ptSync();
+  try {
+    const r = await call('setEmployeePartTime', { employeeId: id, partTime: on, reason: why });
+    if (!r.ok) { setMsg('ptMsg', false, r.error.message); return; }
+    setMsg('ptMsg', true, on ? 'Marked Part-Time.' : 'No longer Part-Time.'); document.getElementById('ptReason').value = ''; pe.value = ''; await loadHolidays(); // blank again
+  } finally { PT_SAVING = false; ptSync(); }
 }
 // ---- Process Holiday
 function hpChoices() {
