@@ -403,6 +403,9 @@
   .pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 700; }
   .pill.in { background: #e3f4e8; color: #1e7e34; } .pill.out { background: #fdecea; color: #b3261e; }
   .pill.brk { background: #fff3dc; color: #9a6400; } .pill.adm { background: #eee8fb; color: #5b2ca0; }
+  /* HOLIDAY */ .hp-depts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; } .hp-opt { display: inline-flex; align-items: center; gap: 5px; font-weight: 400; margin-right: 12px; font-size: 14px; }
+  .hp-opt input { width: auto; margin: 0; } .hp-opt { white-space: nowrap; } #hpFilter { width: auto; max-width: 200px; }
+  .hp-lbl { font-size: 13px; font-weight: 600; color: #3b475e; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .d-detail { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-top: 16px; }
   @media (max-width: 1250px) {
     .d-grid { grid-template-columns: 1fr; } .d-clock { grid-row: auto; }
@@ -453,6 +456,7 @@
     <button data-tab="terminals"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M9 7h6M9 11h.01M12 11h.01M15 11h.01M9 14h.01M12 14h.01M15 14h.01M10 18h4"/></svg><span>Kiosks</span></button>
     <button data-tab="rules"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Time Rules</span></button>
     <button data-tab="venues"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg><span>Venues</span></button>
+    <button data-tab="holidays"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="m9 15 2 2 4-4"/></svg><span>Holidays</span></button>
     </nav>
     <div class="side-foot">
       <div class="side-user" role="button" tabindex="0" title="My Account — change your username or password" style="cursor:pointer" onclick="openMyAccount()" onkeydown="if(event.key==='Enter')openMyAccount()"><div class="av" id="sideAvatar">A</div><div><div class="nm" id="sideUser">Admin</div><div class="rl">Administrator · My Account</div></div></div>
@@ -876,6 +880,88 @@
         </div>
         <div class="table-wrap">
           <table id="venTable"><thead><tr><th>ID</th><th>Name</th><th>Status</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+    <section id="holidays">
+      <div class="subnav" id="holNav">
+        <button class="on" data-v="cal" onclick="holView('cal')">Holiday Calendar</button>
+        <button data-v="proc" onclick="holView('proc')">Process Holiday</button>
+        <button data-v="hist" onclick="holView('hist')">Holiday History</button>
+      </div>
+      <div id="hol_cal">
+        <div class="block">
+          <h2 id="hcTitle">Add holiday</h2>
+          <p class="sub">One shared calendar for both venues. A holiday is credited only when you process it (Process Holiday).</p>
+          <div class="grid">
+            <div><label for="hcName">Holiday name</label><input id="hcName" maxlength="60" placeholder="e.g. Columbus Day"></div>
+            <div><label for="hcDate">Date</label><input id="hcDate" type="date"></div>
+            <div><label for="hcVenue">Venue</label><select id="hcVenue"><option value="ALL">Both venues</option><option value="VEN-SV">Saipan Vegas</option><option value="VEN-C88">Club 88</option></select></div>
+            <div id="hcReasonRow" hidden><label for="hcReason">Reason for the change</label><input id="hcReason"></div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" id="hcSave" onclick="run(this, saveHolidayUI)">Save holiday</button>
+            <button class="btn btn-secondary" onclick="holClear()">Clear</button>
+          </div>
+          <div id="holCalMsg" class="msg"></div>
+        </div>
+        <div class="block">
+          <div class="list-head"><h3>Holidays</h3><button class="btn btn-secondary btn-sm" onclick="run(this, loadHolidays)">Refresh list</button></div>
+          <div class="table-wrap"><table id="holTable"><thead><tr><th>Date</th><th>Holiday</th><th>Venue</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="block">
+          <h3>Part-Time employees</h3>
+          <p class="sub">Part-Time is a separate classification (not an Employment Status). It is used only by "Exclude Part-Time" when processing a holiday.</p>
+          <div class="grid">
+            <div><label for="ptEmp">Employee</label><select id="ptEmp"></select></div>
+            <div><label for="ptReason">Reason</label><input id="ptReason" placeholder="e.g. works 20 hours a week"></div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-secondary" onclick="run(this, function () { return setPartTimeUI(true); })">Mark Part-Time</button>
+            <button class="btn btn-secondary" onclick="run(this, function () { return setPartTimeUI(false); })">Remove Part-Time</button>
+          </div>
+          <div id="ptMsg" class="msg"></div>
+          <div class="sub" id="ptList"></div>
+        </div>
+      </div>
+      <div id="hol_proc" hidden>
+        <div class="block">
+          <h2>Process holiday</h2>
+          <p class="sub">Credits <b>8:00 Holiday</b> to each selected eligible employee (as paid hours on the time card). The Time Rules decide who is eligible — the choices below can only leave people out, never add them. <b>Needs Review</b> employees are never credited here.</p>
+          <div class="grid">
+            <div class="full"><label for="hpHoliday">Holiday</label><select id="hpHoliday" onchange="hpChanged()"></select></div>
+            <div class="full"><label>Venue</label>
+              <label class="hp-opt"><input type="radio" name="hpVenue" value="BOTH" checked onchange="hpChanged()"> Both</label>
+              <label class="hp-opt"><input type="radio" name="hpVenue" value="VEN-SV" onchange="hpChanged()"> Saipan Vegas</label>
+              <label class="hp-opt"><input type="radio" name="hpVenue" value="VEN-C88" onchange="hpChanged()"> Club 88</label></div>
+            <div class="full"><div class="hp-lbl">Departments <button class="btn btn-secondary btn-sm" id="hpAll" onclick="hpDepts(true)">Select All</button> <button class="btn btn-secondary btn-sm" id="hpNone" onclick="hpDepts(false)">Clear</button></div>
+              <div id="hpDepts" class="hp-depts"></div></div>
+            <div class="full"><label>Exclusions</label>
+              <label class="hp-opt"><input type="checkbox" id="hpExPT" checked onchange="hpChanged()"> Exclude Part-Time</label>
+              <label class="hp-opt"><input type="checkbox" id="hpExProb" checked onchange="hpChanged()"> Exclude Probationary</label>
+              <div class="sub" style="margin:4px 0 0">Part-Time and Probationary exclusions must be confirmed by HR / legal before they are used for payroll.</div></div>
+          </div>
+          <div class="actions"><button class="btn btn-primary" id="hpPreview" onclick="run(this, previewHolidayUI)">Preview (saves nothing)</button></div>
+          <div id="hpMsg" class="msg" style="white-space:pre-line"></div>
+        </div>
+        <div class="block" id="hpResult" hidden>
+          <div class="list-head"><h3 id="hpCounts"></h3></div>
+          <div class="actions" style="margin-top:0">
+            <select id="hpFilter" onchange="hpApplyFilter()"><option value="ALL">Show all</option><option value="ELIGIBLE">Eligible</option><option value="EXCLUDED">Excluded</option><option value="REVIEW">Needs Review</option></select>
+            <input id="hpFind" placeholder="Find name or ID" oninput="hpApplyFilter()" style="max-width:200px">
+            <button class="btn btn-secondary btn-sm" id="hpSelVis" onclick="hpSelect(true)">Select All Visible</button>
+            <button class="btn btn-secondary btn-sm" id="hpSelNone" onclick="hpSelect(false)">Clear selection</button>
+          </div>
+          <div class="table-wrap"><table id="hpTable"><thead><tr><th></th><th>Employee</th><th>Department</th><th>Venue</th><th>Status</th><th>Reason / note</th></tr></thead><tbody></tbody></table></div>
+          <div class="actions"><button class="btn btn-primary" id="hpProcess" onclick="run(this, processHolidayUI)" disabled>Credit holiday</button></div>
+        </div>
+      </div>
+      <div id="hol_hist" hidden>
+        <div class="block">
+          <div class="list-head"><h3>Holiday history</h3><button class="btn btn-secondary btn-sm" onclick="run(this, loadHolidays)">Refresh list</button></div>
+          <p class="sub">Every processing run (batch). A reversal voids the batch's remaining Holiday entries (kept, marked Voided) and needs a reason. An unfinished batch (the run was interrupted) must be finished before the holiday can be processed again.</p>
+          <div class="table-wrap"><table id="hhTable"><thead><tr><th>Batch</th><th>Holiday</th><th>Status</th><th>Credited</th><th>Approved by</th><th>When</th><th>Warnings</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div id="hhMsg" class="msg" style="white-space:pre-line"></div>
         </div>
       </div>
     </section>
@@ -1326,7 +1412,9 @@ const SHAPES = {
   updateDepartment: has('departments', 'positions'), updatePosition: has('departments', 'positions'), setDepartmentStatus: has('departments', 'positions'),
   setPositionStatus: has('departments', 'positions'), deptPosDataCheck: has('summary'), setupComputationRules: has('versions'),
   saveComputationRuleVersion: has('versions'), cancelComputationRuleVersion: has('versions'), previewComputationRules: has('token'),
-  applyDeptDefaultBreaks: has('updated'), saveKioskContent: has('id'), removeKioskContent: has('id'), updateMyAccount: has('loggedOut')
+  applyDeptDefaultBreaks: has('updated'), saveKioskContent: has('id'), removeKioskContent: has('id'), updateMyAccount: has('loggedOut'),
+  listHolidays: has('holidays', 'batches'), previewHoliday: has('rows', 'previewToken'), saveHoliday: has('holidayId'), cancelHoliday: has('holidayId'), // HOLIDAY
+  setEmployeePartTime: has('employeeId', 'partTime'), processHoliday: has('batchId', 'credited'), reverseHolidayBatch: has('batchId', 'voided'), reconcileHolidayBatch: has('batchId', 'status')
 };
 function shapeProblem(action, data) {
   const want = SHAPES[action];
@@ -1341,7 +1429,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount)$/;
+const SAVE_ACTIONS = /^(createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -1623,6 +1711,201 @@ function stayLoggedIn() {
 }
 
 // ============================================================================
+// HOLIDAY (2026-10-11): Holidays — Calendar, Process Holiday, History. Loaded only when this menu opens.
+// ============================================================================
+let HOL = null;      // last listHolidays answer
+let HOL_PV = null;   // last preview (+ f: the choices it was made with, sel: selected employee IDs)
+let HOL_EDIT = null; // holiday being edited
+const HOL_STATE = { ELIGIBLE: 'Eligible', EXCLUDED: 'Excluded', REVIEW: 'Needs Review' };
+function holView(v) {
+  document.querySelectorAll('#holNav button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === v); });
+  ['cal', 'proc', 'hist'].forEach(function (k) { document.getElementById('hol_' + k).hidden = k !== v; });
+}
+async function loadHolidays() {
+  const r = await call('listHolidays', {});
+  if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
+  HOL = r.data; renderHolidays();
+}
+function holVenue(v) { return (HOL && HOL.venues[v]) || ({ BOTH: 'Both venues' })[v] || v; }
+function holPill(text, cls) { return el('span', { className: 'pill ' + cls, text: text }); }
+function renderHolidays() {
+  const tb = document.querySelector('#holTable tbody'); tb.innerHTML = '';
+  if (!HOL.holidays.length) emptyRow(tb, 5, 'No holidays yet.');
+  HOL.holidays.forEach(function (h) {
+    const acts = el('span');
+    if (h.status === 'Scheduled') {
+      acts.appendChild(el('button', { className: 'btn btn-secondary btn-sm', text: 'Edit', onclick: function () { holEdit(h); } }));
+      acts.appendChild(el('button', { className: 'btn btn-danger-ghost btn-sm', text: 'Cancel', onclick: function () { run(this, function () { return holCancel(h); }); } }));
+    }
+    const cls = { Scheduled: 'brk', Processed: 'in', Unfinished: 'out', Cancelled: 'adm' }[h.status] || 'brk';
+    addRow(tb, [h.date, h.name, holVenue(h.venue), el('span', null, [holPill(h.status, cls), h.cancelReason ? ' ' + h.cancelReason : '']), acts]);
+  });
+  const sel = document.getElementById('hpHoliday'), keep = sel.value; sel.innerHTML = '';
+  HOL.holidays.filter(function (h) { return h.status !== 'Cancelled'; }).forEach(function (h) {
+    sel.appendChild(el('option', { value: h.holidayId, text: h.date + ' — ' + h.name + ' (' + holVenue(h.venue) + ')' + (h.status === 'Scheduled' ? '' : ' · ' + h.status) }));
+  });
+  if (keep) sel.value = keep;
+  const box = document.getElementById('hpDepts'), list = HOL.departments.join('|');
+  if (box.dataset.list !== list) { // the user's ticks stay while the list is the same
+    box.innerHTML = ''; box.dataset.list = list;
+    HOL.departments.forEach(function (dep) {
+      const c = el('input', { type: 'checkbox', value: dep }); c.checked = HOL.defaultUnchecked.indexOf(dep) === -1; c.onchange = hpChanged;
+      box.appendChild(el('label', { className: 'hp-opt' }, [c, ' ' + dep]));
+    });
+  }
+  const pe = document.getElementById('ptEmp'), pk = pe.value; pe.innerHTML = '';
+  EMPLOYEES.forEach(function (e) { pe.appendChild(el('option', { value: e.employeeId, text: e.name + ' (' + e.employeeId + ')' + (HOL.partTime[e.employeeId] ? ' · Part-Time' : '') })); });
+  if (pk) pe.value = pk;
+  const pts = Object.keys(HOL.partTime);
+  document.getElementById('ptList').textContent = pts.length ? 'Part-Time now: ' + pts.map(function (id) {
+    const e = EMPLOYEES.find(function (x) { return x.employeeId === id; }); return e ? e.name + ' (' + id + ')' : id; }).join(', ') : 'Nobody is marked Part-Time.';
+  const hb = document.querySelector('#hhTable tbody'); hb.innerHTML = '';
+  if (!HOL.batches.length) emptyRow(hb, 8, 'No holiday has been processed yet.');
+  const names = {}; HOL.holidays.forEach(function (h) { names[h.holidayId] = h.date + ' — ' + h.name; });
+  HOL.batches.forEach(function (b) {
+    const acts = el('span');
+    if (b.status === 'PROCESSED') acts.appendChild(el('button', { className: 'btn btn-danger-ghost btn-sm hh-reverse', text: 'Reverse…', onclick: function () { const t = this; run(t, function () { return reverseHolUI(b); }); } }));
+    else if (b.status !== 'REVERSED') acts.appendChild(el('button', { className: 'btn btn-primary btn-sm hh-reconcile', text: 'Finish (reconcile)', onclick: function () { const t = this; run(t, function () { return reconcileHolUI(b); }); } }));
+    const cls = { PROCESSED: 'in', REVERSED: 'adm', REVERSING: 'out', PROCESSING: 'out', NEEDS_ATTENTION: 'out' }[b.status] || 'brk';
+    const st = el('span', null, [holPill(b.status.replace('_', ' '), cls)]);
+    if (b.reversedAt) st.appendChild(el('div', { className: 'sub', style: 'margin:2px 0 0', text: 'Reversed by ' + b.reversedBy + ', ' + saipanDateTime(b.reversedAt) + ' — ' + b.reverseReason }));
+    if (b.note && b.status === 'NEEDS_ATTENTION') st.appendChild(el('div', { className: 'sub', style: 'margin:2px 0 0', text: b.note }));
+    const warn = b.warnings.length ? el('details', null, [el('summary', { text: b.warnings.length + ' warning(s)' }), el('div', { style: 'white-space:pre-line;font-size:12px', text: b.warnings.join('\n') })]) : '—';
+    addRow(hb, [b.batchId, names[b.holidayId] || b.holidayId, st, String(b.credited) + ' of ' + b.employees, b.createdBy, saipanDateTime(b.createdAt), warn, acts]);
+  });
+}
+function holEdit(h) {
+  HOL_EDIT = h.holidayId;
+  document.getElementById('hcName').value = h.name; document.getElementById('hcDate').value = h.date; document.getElementById('hcVenue').value = h.venue;
+  document.getElementById('hcReason').value = ''; document.getElementById('hcReasonRow').hidden = false;
+  document.getElementById('hcTitle').textContent = 'Edit holiday'; document.getElementById('hcSave').textContent = 'Save changes';
+  clearMsg('holCalMsg');
+}
+function holClear() {
+  HOL_EDIT = null;
+  ['hcName', 'hcDate', 'hcReason'].forEach(function (id) { document.getElementById(id).value = ''; });
+  document.getElementById('hcVenue').value = 'ALL'; document.getElementById('hcReasonRow').hidden = true;
+  document.getElementById('hcTitle').textContent = 'Add holiday'; document.getElementById('hcSave').textContent = 'Save holiday';
+}
+async function saveHolidayUI() {
+  const p = { name: document.getElementById('hcName').value.trim(), date: document.getElementById('hcDate').value, venue: document.getElementById('hcVenue').value };
+  if (!p.name || !p.date) { setMsg('holCalMsg', false, 'Enter the holiday name and date.'); return; }
+  if (HOL_EDIT) { p.holidayId = HOL_EDIT; p.reason = document.getElementById('hcReason').value.trim(); }
+  const r = await call('saveHoliday', p);
+  if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
+  setMsg('holCalMsg', true, HOL_EDIT ? 'Holiday updated.' : 'Holiday added: ' + p.name + ' (' + p.date + ').');
+  holClear(); await loadHolidays();
+}
+async function holCancel(h) {
+  const why = prompt('Cancel the holiday ' + h.name + ' (' + h.date + ')?\nIt is kept in the list as Cancelled.\n\nReason (required):');
+  if (why === null) return;
+  if (why.trim().length < 3) { setMsg('holCalMsg', false, 'Please enter the reason.'); return; }
+  const r = await call('cancelHoliday', { holidayId: h.holidayId, reason: why.trim() });
+  if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
+  setMsg('holCalMsg', true, 'Holiday cancelled.'); await loadHolidays();
+}
+async function setPartTimeUI(on) {
+  const id = document.getElementById('ptEmp').value, why = document.getElementById('ptReason').value.trim();
+  if (!id) return;
+  const r = await call('setEmployeePartTime', { employeeId: id, partTime: on, reason: why });
+  if (!r.ok) { setMsg('ptMsg', false, r.error.message); return; }
+  setMsg('ptMsg', true, on ? 'Marked Part-Time.' : 'No longer Part-Time.'); document.getElementById('ptReason').value = ''; await loadHolidays();
+}
+// ---- Process Holiday
+function hpChoices() {
+  return { holidayId: document.getElementById('hpHoliday').value, venue: (document.querySelector('input[name=hpVenue]:checked') || {}).value || 'BOTH',
+    departments: Array.prototype.filter.call(document.querySelectorAll('#hpDepts input'), function (c) { return c.checked; }).map(function (c) { return c.value; }),
+    excludePartTime: document.getElementById('hpExPT').checked, excludeProbationary: document.getElementById('hpExProb').checked };
+}
+function hpDepts(on) { document.querySelectorAll('#hpDepts input').forEach(function (c) { c.checked = on; }); hpChanged(); }
+function hpChanged() { // any change to the choices needs a new preview
+  HOL_PV = null; document.querySelector('#hpTable tbody').innerHTML = ''; document.getElementById('hpResult').hidden = true;
+  document.getElementById('hpProcess').disabled = true; clearMsg('hpMsg');
+}
+async function previewHolidayUI() {
+  const f = hpChoices();
+  if (!f.holidayId) { setMsg('hpMsg', false, 'Add the holiday in Holiday Calendar first.'); return; }
+  if (!f.departments.length) { setMsg('hpMsg', false, 'Choose at least one department.'); return; }
+  const r = await call('previewHoliday', f);
+  if (!r.ok) { setMsg('hpMsg', false, r.error.message); return; }
+  HOL_PV = Object.assign({ f: f, sel: {} }, r.data);
+  renderPreview();
+  if (r.data.blocked) setMsg('hpMsg', false, r.data.blocked); else clearMsg('hpMsg');
+}
+function renderPreview() {
+  const tb = document.querySelector('#hpTable tbody'); tb.innerHTML = '';
+  document.getElementById('hpResult').hidden = false;
+  const c = HOL_PV.counts;
+  document.getElementById('hpCounts').textContent = 'Eligible ' + c.eligible + ' · Excluded ' + c.excluded + ' · Needs Review ' + c.review;
+  if (!HOL_PV.rows.length) emptyRow(tb, 6, 'Nobody matches these choices.');
+  HOL_PV.rows.forEach(function (x) {
+    let box = '';
+    if (x.state === 'ELIGIBLE' && !HOL_PV.blocked) {
+      box = el('input', { type: 'checkbox', className: 'hp-sel' }); box.checked = !!HOL_PV.sel[x.employeeId];
+      box.onchange = function () { HOL_PV.sel[x.employeeId] = this.checked; hpCount(); };
+    }
+    const tr = addRow(tb, [box, x.name + ' (' + x.employeeId + ')', x.department, holVenue(x.venue),
+      holPill(HOL_STATE[x.state], { ELIGIBLE: 'in', EXCLUDED: 'adm', REVIEW: 'out' }[x.state]),
+      x.employmentStatus + (x.partTime ? ' · Part-Time' : '') + (x.reasons.length ? ' — ' + x.reasons.join(' ') : '') + (x.warnings.length ? ' ⚠ ' + x.warnings.join(' ') : '')]);
+    tr.dataset.id = x.employeeId; tr.dataset.state = x.state; tr.dataset.find = (x.name + ' ' + x.employeeId).toLowerCase();
+  });
+  hpApplyFilter(); hpCount();
+}
+function hpApplyFilter() {
+  const want = document.getElementById('hpFilter').value, q = document.getElementById('hpFind').value.trim().toLowerCase();
+  document.querySelectorAll('#hpTable tbody tr[data-id]').forEach(function (tr) {
+    tr.hidden = (want !== 'ALL' && tr.dataset.state !== want) || (!!q && tr.dataset.find.indexOf(q) === -1);
+  });
+}
+function hpSelect(on) { // Select All Visible / Clear selection (only Eligible rows can be selected)
+  if (!HOL_PV) return;
+  document.querySelectorAll('#hpTable tbody tr[data-id]').forEach(function (tr) {
+    const b = tr.querySelector('input.hp-sel');
+    if (!b || (on && tr.hidden)) return;
+    b.checked = on; HOL_PV.sel[tr.dataset.id] = on;
+  });
+  hpCount();
+}
+function hpSelected() { return HOL_PV ? Object.keys(HOL_PV.sel).filter(function (k) { return HOL_PV.sel[k]; }) : []; }
+function hpCount() {
+  const n = hpSelected().length, b = document.getElementById('hpProcess');
+  b.disabled = !n; b.textContent = n ? 'Credit 8:00 holiday to ' + n + ' employee' + (n === 1 ? '' : 's') + '…' : 'Credit holiday';
+}
+async function processHolidayUI() {
+  const ids = hpSelected(); if (!ids.length || !HOL_PV) return;
+  const h = HOL_PV.holiday;
+  if (!confirm('Credit HOLIDAY 8:00 to ' + ids.length + ' employee(s)?\n\n' + h.name + ' — ' + h.date + ' (' + holVenue(h.venue) + ')\nTotal ' + hm(ids.length * 8) +
+    ' hours of holiday pay.\n\nIt is added to their time cards as paid hours. It can be reversed later from Holiday History (with a reason).')) return;
+  const r = await call('processHoliday', Object.assign({}, HOL_PV.f, { employeeIds: ids, previewToken: HOL_PV.previewToken, confirm: true }));
+  if (!r.ok) {
+    setMsg('hpMsg', false, r.error.message + (/UNCERTAIN|IN_PROGRESS|INTERNAL_ERROR/.test(r.error.code) ? '\nOpen Holiday History to see what was saved before trying again.' : ''));
+    if (r.error.code === 'PREVIEW_STALE') hpChanged();
+    return;
+  }
+  hpChanged();
+  setMsg('hpMsg', true, 'Done: ' + r.data.credited + ' employee(s) credited 8:00 Holiday (batch ' + r.data.batchId + ').' +
+    (r.data.warnings.length ? '\n' + r.data.warnings.length + ' warning(s) — see Holiday History.' : ''));
+  await loadHolidays();
+}
+// ---- History
+async function reverseHolUI(b) {
+  const why = prompt('Reverse holiday batch ' + b.batchId + '?\nEvery Holiday 8:00 entry of this batch that is still active is voided (kept, marked Voided).\n\nReason (required):');
+  if (why === null) return;
+  if (why.trim().length < 3) { setMsg('hhMsg', false, 'Please enter the reason for the reversal.'); return; }
+  if (!confirm('Reverse ' + b.batchId + ' now?\n\nReason: ' + why.trim())) return;
+  const r = await call('reverseHolidayBatch', { batchId: b.batchId, reason: why.trim() });
+  if (!r.ok) { setMsg('hhMsg', false, r.error.message); await loadHolidays(); return; }
+  setMsg('hhMsg', true, 'Reversed: ' + r.data.voided + ' entr' + (r.data.voided === 1 ? 'y' : 'ies') + ' voided.'); await loadHolidays();
+}
+async function reconcileHolUI(b) {
+  if (!confirm('Finish batch ' + b.batchId + '?\n\nIt adds only what is missing from the interrupted run (never a second holiday for anyone) and then marks the batch finished.')) return;
+  const r = await call('reconcileHolidayBatch', { batchId: b.batchId });
+  if (!r.ok) { setMsg('hhMsg', false, r.error.message); await loadHolidays(); return; }
+  setMsg('hhMsg', true, 'Batch finished (' + r.data.status + ').' + (r.data.skipped && r.data.skipped.length ? ' Not credited again (already had a holiday): ' + r.data.skipped.join(', ') + '.' : ''));
+  await loadHolidays();
+}
+
+// ============================================================================
 // Tabs
 // ============================================================================
 const TAB_LOADERS = {
@@ -1637,6 +1920,7 @@ const TAB_LOADERS = {
   terminals: function () { if (Array.isArray(kioskInfo)) renderTerminals({ ok: true, data: kioskInfo }); refreshTerminals(); loadStorage(false); return loadKC(); },
   alerts: function () { return checkAlerts(true); },
   rules: function () { return loadRules(); },
+  holidays: function () { return loadHolidays(); }, // HOLIDAY: loaded only when the menu opens
   // REFRESH R2: Time Cards — if cards were showing, update them (the saved ones stay visible meanwhile)
   reports: function () {
     let had = false;
@@ -1669,7 +1953,7 @@ let currentTab = 'dashboard';
 // Ctrl+Shift+R (or the browser's reload button) still reloads the whole page —
 // and even then you come back to the same menu with your selections.
 const TAB_NAMES = { rules: 'Time Rules', dashboard: 'Dashboard', clock: 'Clock In / Out', alerts: 'Alerts', reports: 'Time Cards',
-  employees: 'Employees', terminals: 'Kiosks', venues: 'Venues' };
+  employees: 'Employees', terminals: 'Kiosks', venues: 'Venues', holidays: 'Holidays' };
 async function refreshCurrentTab() {
   const t = currentTab;
   toast('Refreshing ' + (TAB_NAMES[t] || '') + '…');
@@ -1685,6 +1969,7 @@ async function refreshCurrentTab() {
   else if (t === 'employees') await refreshEmployees();
   else if (t === 'terminals') { await refreshTerminals(); await loadKC(); }
   else if (t === 'venues') await refreshVenues();
+  else if (t === 'holidays') await loadHolidays();
   toast((TAB_NAMES[t] || 'Page') + ' refreshed.  (Ctrl+Shift+R reloads the whole page.)');
 }
 document.addEventListener('keydown', function (e) {
