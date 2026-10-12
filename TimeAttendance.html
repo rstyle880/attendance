@@ -1119,7 +1119,7 @@
     </div>
     <div id="alertItems"></div>
     <div class="alert-foot">
-      <button class="btn btn-secondary" onclick="snoozeAlerts()">Remind me in 30 minutes</button>
+      <button class="btn btn-secondary" onclick="closeAlertPopup()">Dismiss</button>
       <button class="btn btn-primary" onclick="openAlertsTab()">Open Alerts list</button>
     </div>
   </div>
@@ -1152,7 +1152,6 @@ function periodFor(offset) { // 0 = current, -1 = previous (server), fallback to
   return { start: start, end: addDays(start, PAY_PERIOD_DAYS - 1) };
 }
 const ALERT_POLL_MS = 2 * 60 * 1000;
-const ALERT_SNOOZE_MS = 30 * 60 * 1000;
 const COMPANY_NAME = 'MP Holdings, LLC';
 // Company printed on a time card, by the employee's DEFAULT venue (edit here if a venue is added)
 const COMPANY_BY_VENUE = { 'VEN-SV': 'MP Holdings, LLC', 'VEN-C88': 'Mariana Entertainment, LLC' };
@@ -1163,6 +1162,12 @@ function companyFor(c) {
 }
 
 let sessionToken = null;
+// SESSION GUARD (Codex review of V1 Phase 1): every login and every end of a session (logout, idle logout, expiry) gets a
+// new SESSION_GEN. A request remembers the number it was sent under; when its answer (or a retry) comes after the
+// session ended or changed, call() throws STALE_SESSION_ instead of answering, so the old session's work stops where it
+// is: nothing is shown, saved, marked seen or made printable, and an old AUTH_REQUIRED never ends a newer session.
+// (SESSION_GEN and STALE_SESSION_ are declared with call() below.)
+window.addEventListener('unhandledrejection', function (e) { if (e.reason === STALE_SESSION_) e.preventDefault(); });
 let bootData = null; // AUDIT2 A2: data from adminBootstrap, used once right after login
 let EMPLOYEES = [];      // [{employeeId, name, department, position, status}]
 let VENUES = [];         // [{venueId, venueName, status}]
@@ -1180,7 +1185,7 @@ function apiUrl() { return document.getElementById('apiUrl').value.replace(/\s+/
 async function run(btn, fn) {
   if (btn.classList.contains('loading')) return;
   btn.classList.add('loading'); btn.disabled = true;
-  try { await fn(); } catch (e) { console.error(e); }
+  try { await fn(); } catch (e) { if (e !== STALE_SESSION_) console.error(e); }
   finally { btn.classList.remove('loading'); btn.disabled = false; }
 }
 
@@ -1346,25 +1351,33 @@ function newRequestId() {
   return 'REQ-' + day + '-' + s;
 }
 
+let SESSION_GEN = 0; // SESSION GUARD (see sessionToken above)
+const STALE_SESSION_ = { staleSession: true, message: 'answer of an earlier session ignored' };
 // opts.bg = background refresh (auto-polling): does NOT count as activity (IDLE I2)
 async function call(action, payload, opts) {
   const url = apiUrl();
   if (!url) return { ok: false, error: { code: 'NO_URL', message: 'Set the Web App URL on the login screen first.' } };
-  const bg = !!(opts && opts.bg);
+  const bg = !!(opts && opts.bg), gen = SESSION_GEN; // SESSION GUARD: the session this request belongs to
+  const stale = function () { if (gen !== SESSION_GEN) throw STALE_SESSION_; };
   const body = Object.assign({}, payload || {}, { token: sessionToken });
   if (bg) body.bg = true; else lastServerTouch = Date.now();
   const idemp = IDEMP_OK && SAVE_ACTIONS.test(action);
   if (idemp) body.requestId = newRequestId(); // IDEMP: once per click — never a new one on retry
   let result = await postApi(url, action, body);
+  stale();
   if (!result.ok && result.error && RETRYABLE[result.error.code] && READ_ACTIONS.test(action)) {
     await new Promise(function (r) { setTimeout(r, 1500); });
+    stale(); // no retry for a session that ended meanwhile
     result = await postApi(url, action, body); // FIX14 #1: one automatic retry for reads
+    stale();
   }
   for (let i = 1; idemp && i <= 3 && !result.ok && result.error && SAVE_RETRY[result.error.code]; i++) {
     await new Promise(function (r) { setTimeout(r, 2000 * i); }); // IDEMP: 2 s, 4 s, 6 s
+    stale();
     result = await postApi(url, action, body); // the SAME body = the same request ID
+    stale();
   }
-  if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') {
+  if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') { // only the CURRENT session's (stale() above)
     endSession(result.error.message || 'Session expired. Please log in again.');
   }
   return result;
@@ -1465,7 +1478,7 @@ async function doLogin() {
     return;
   }
   try { localStorage.setItem('admin_apiUrl', url); } catch (e) {}
-  sessionToken = result.data.token;
+  sessionToken = result.data.token; SESSION_GEN++; // SESSION GUARD: a new session
   lastActivity = Date.now(); lastServerTouch = Date.now();
   try { sessionStorage.setItem('admin_last_activity', String(lastActivity)); } catch (e) {}
   // Keep the session through a page refresh (F5). sessionStorage is cleared
@@ -1478,6 +1491,8 @@ async function doLogin() {
 }
 
 async function enterApp() {
+  // SESSION GUARD: this start-up belongs to this session only (typeof: the start-up is also tested on its own, without call())
+  const gen = typeof SESSION_GEN === 'undefined' ? null : SESSION_GEN, mine = function () { return gen === null || gen === SESSION_GEN; };
   document.body.classList.add('in-app');
   let who = 'Admin';
   try { who = sessionStorage.getItem('admin_user') || 'Admin'; } catch (e) {}
@@ -1520,14 +1535,15 @@ async function enterApp() {
     }
     restoreClockEmployee();
   } catch (e) {
+    if (typeof STALE_SESSION_ !== 'undefined' && e === STALE_SESSION_) throw e; // the session ended meanwhile: stop quietly
     console.warn('[attendance] start-up problem', e);
     toast('Some data could not load. It will retry automatically.');
   } finally {
     // FIX14 #1: whatever happened above, the portal keeps working (refreshes, alerts, idle timer)
-    if (sessionToken) {
+    if (sessionToken && mine()) { // SESSION GUARD: never start polling / idle watch for a newer session
       startAlertPolling(bootData && bootData.alerts);
       startIdleWatch(bootData && bootData.idleMinutes);
-      if (!EMPLOYEES.length || !VENUES.length) setTimeout(function () { if (sessionToken) { loadEmployees(); loadVenues(); } }, 10000);
+      if (!EMPLOYEES.length || !VENUES.length) setTimeout(function () { if (sessionToken && mine()) { loadEmployees(); loadVenues(); } }, 10000);
     }
     bootData = null;
   }
@@ -1552,10 +1568,11 @@ async function doLogout() {
 let IDLE_MS = 30 * 60 * 1000;
 let lastActivity = Date.now(), lastServerTouch = Date.now(), idleTimer = null;
 function endSession(message) {
-  sessionToken = null;
+  sessionToken = null; SESSION_GEN++; // SESSION GUARD: answers of this session are ignored from now on
   clearInterval(idleTimer); idleTimer = null;
   stopAlertPolling(); clearInterval(dashTimer); clearInterval(dashTick);
   try { sessionStorage.removeItem('admin_session'); sessionStorage.removeItem('admin_last_activity'); } catch (e) {}
+  resetTimeCardsView(); // TCCLEAR: the next login starts with an empty Time Cards page
   closeAlertPopup();
   document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { o.classList.remove('open'); });
   document.getElementById('idleWarn').classList.remove('open');
@@ -1926,8 +1943,24 @@ async function voidPunch(btn, r) {
 function startAlertPolling(pre) { stopAlertPolling(); checkAlerts(false, pre); alertTimer = setInterval(function () { checkAlerts(false); }, ALERT_POLL_MS); }
 function stopAlertPolling() { if (alertTimer) clearInterval(alertTimer); alertTimer = null; }
 
-function getSnoozes() { try { return JSON.parse(localStorage.getItem('alert_snooze') || '{}'); } catch (e) { return {}; } }
-function setSnoozes(s) { try { localStorage.setItem('alert_snooze', JSON.stringify(s)); } catch (e) {} }
+// ALERTPOP (V2, 2026-10-09): each alert pops up at most ONCE per admin login session. The record of which alerts
+// were shown lives in this tab's sessionStorage, tied to the login token, so a refresh keeps it, a new login starts
+// fresh, and other tabs / admin accounts are independent. Closing the pop-up never changes anything on the server;
+// the badge, Alerts list and Dashboard keep updating as before.
+let ALERT_SEEN_MEM = null; // fallback when sessionStorage is unavailable: once per page load
+function alertKey(a) { return a.type + ':' + a.rawId; }
+function getSeenAlerts() {
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem('alert_seen') || 'null'); } catch (e) {}
+  if (!s || s.token !== sessionToken) s = ALERT_SEEN_MEM;
+  return s && s.token === sessionToken ? s.ids : {};
+}
+function markAlertsSeen(list) {
+  const s = { token: sessionToken, ids: getSeenAlerts() };
+  list.forEach(function (a) { s.ids[alertKey(a)] = 1; });
+  ALERT_SEEN_MEM = s;
+  try { sessionStorage.setItem('alert_seen', JSON.stringify(s)); } catch (e) {}
+}
 
 async function checkAlerts(fromUser, pre) {
   if (!sessionToken) return;
@@ -1938,12 +1971,15 @@ async function checkAlerts(fromUser, pre) {
   document.getElementById('alertSub').textContent = 'Still clocked in past their hours + break + 5 min, clock-outs with no clock-in, breaks not ended, and shifts with no clock-out after ' + result.data.alertHours + ' hours (last 30 days). Checked every 2 minutes.';
   setAlertTable(result);
 
-  // Pop up for alerts that are not snoozed
-  const snooze = getSnoozes(), now = Date.now();
-  Object.keys(snooze).forEach(function (k) { if (snooze[k] < now) delete snooze[k]; });
-  setSnoozes(snooze);
-  const due = lastAlerts.filter(function (a) { return !snooze[a.rawId]; });
-  if (due.length) showAlertPopup(due);
+  // ALERTPOP: pop up only for alerts not yet shown in this login session. If the pop-up is still open, it keeps the
+  // alerts it already shows (while they are unresolved) and adds the new ones; it closes when none are left.
+  const seen = getSeenAlerts();
+  const fresh = lastAlerts.filter(function (a) { return !seen[alertKey(a)]; });
+  const overlay = document.getElementById('alertOverlay');
+  const open = overlay.classList.contains('open') ? (overlay.dataset.ids || '').split(',') : [];
+  const keep = lastAlerts.filter(function (a) { return open.indexOf(alertKey(a)) !== -1; });
+  const show = keep.concat(fresh);
+  if (show.length) { showAlertPopup(show); markAlertsSeen(fresh); }
   else closeAlertPopup();
 }
 
@@ -1986,7 +2022,7 @@ function showAlertPopup(list) {
   const overlay = document.getElementById('alertOverlay');
   const wasOpen = overlay.classList.contains('open');
   const prevIds = overlay.dataset.ids || '';
-  const ids = list.map(function (a) { return a.rawId; }).join(',');
+  const ids = list.map(alertKey).join(','); // ALERTPOP: type + id, as in the once-per-session record
   document.getElementById('alertTitle').textContent = list.length === 1
     ? (list[0].type === 'EMP_REPORT' ? 'Employee reported a problem' : list[0].type === 'LONG_BREAK' ? 'Break not ended' : list[0].type === 'OVERDUE_OUT' ? 'Possible missed clock-out'
       : list[0].type === 'PIN_LOCKED' ? 'Employee locked out'
@@ -2010,12 +2046,7 @@ function showAlertPopup(list) {
   if (isNew) playAlarm(list);
 }
 function closeAlertPopup() { const o = document.getElementById('alertOverlay'); o.classList.remove('open'); o.dataset.ids = ''; }
-function snoozeAlerts() {
-  const s = getSnoozes(), until = Date.now() + ALERT_SNOOZE_MS;
-  lastAlerts.forEach(function (a) { s[a.rawId] = until; });
-  setSnoozes(s); closeAlertPopup();
-}
-function openAlertsTab() { closeAlertPopup(); snoozeAlerts(); showTab('alerts'); }
+function openAlertsTab() { closeAlertPopup(); showTab('alerts'); }
 
 function toast(text) {
   let t = document.getElementById('toast');
@@ -2094,8 +2125,9 @@ async function lockAction(btn, a, what) {
 }
 
 function fixAlert(a) {
-  // Snooze while the admin is fixing it, then take them to the Clock tab ready to add the missing punch.
-  const s = getSnoozes(); s[a.rawId] = Date.now() + ALERT_SNOOZE_MS; setSnoozes(s);
+  // No pop-up for this alert while the admin is fixing it (ALERTPOP: seen for this session), then take them to the
+  // Clock tab ready to add the missing punch.
+  markAlertsSeen([a]);
   closeAlertPopup();
   showTab('clock');
   const emp = EMPLOYEES.find(function (e) { return e.employeeId === String(a.employeeId); }) ||
@@ -2212,6 +2244,26 @@ function restoreReportState(showSaved) {
 }
 function clearReportState() {
   try { sessionStorage.removeItem('admin_tc_state'); sessionStorage.removeItem('admin_tc_data'); } catch (e) {}
+}
+// TCCLEAR: logout / idle logout / expired session (endSession) — forget the saved Time Cards and empty
+// the Time Cards page (cards, choices, messages, Print). F5 during the same login still keeps them (R2).
+// V1: no Loading UI (V2 TCNEWEST); REPORT_SEQ++ makes an answer still on its way, or a slice run still drawing, change
+// nothing; the A1 print guard (tc-drawing) is cleared with the cards.
+function resetTimeCardsView() {
+  REPORT_SEQ++; // an answer still on its way (or a slice run still drawing) is ignored
+  clearReportState();
+  reportEmp = null;
+  const rs = document.getElementById('repSearch'); rs.value = ''; if (rs.pickerSync) rs.pickerSync();
+  repStart.value = ''; repEnd.value = '';
+  document.getElementById('reportOut').innerHTML = ''; document.getElementById('reportOut').classList.remove('tc-drawing'); clearMsg('repMsg');
+  document.getElementById('printBtn').disabled = true;
+  document.getElementById('tcPhotos').checked = false;
+  ARCH.current = null; ARCH.previewing = false;
+  arFind.value = ''; arEmp.innerHTML = ''; arPeriod.innerHTML = '';
+  document.getElementById('archOut').innerHTML = ''; clearMsg('arMsg');
+  document.getElementById('arPrint').disabled = true;
+  document.getElementById('arPhotos').checked = false;
+  tcView('live');
 }
 
 function renderTimecard(c, startDate, endDate) {
@@ -4144,7 +4196,7 @@ async function removeKiosk(btn, t) {
   let saved = null;
   try { saved = sessionStorage.getItem('admin_session'); } catch (e) {}
   if (!saved || !apiUrl()) return;
-  sessionToken = saved;
+  sessionToken = saved; SESSION_GEN++; // SESSION GUARD
   enterApp();
   // After a refresh the browser blocks sound until the first click; unlock it then.
   document.addEventListener('click', function unlock() {
