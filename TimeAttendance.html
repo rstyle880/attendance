@@ -269,6 +269,10 @@
     .timecard th, .tlabel, .tc-corr h4, .tc-incomplete, .tc-totals th, .tc-totals tr.pp-total td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .timecard tr.week-total td, .timecard tr.grand td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: letter portrait; margin: 12mm; }
+    /* A1 (V1): cards still being drawn are never printed (also Ctrl+P / browser menu) — only this notice */
+    #reportOut.tc-drawing > * { display: none !important; }
+    #reportOut.tc-drawing::before { content: 'Time cards are still loading. Wait until every card is shown, then print again.';
+      display: block; font-size: 16px; font-weight: 700; padding: 24px 0; }
   }
 
   /* ================= App layout with sidebar ================= */
@@ -1404,14 +1408,17 @@ function fillTable(tableId, result, cols, mapFn, emptyText) {
   if (!result.data.length) { emptyRow(tbody, cols, emptyText); return; }
   result.data.forEach(function (item) { addRow(tbody, mapFn(item)); });
 }
+// A1: date formatters are made once and reused (making one costs ~80x more than using it; a time card used ~60)
+const DTF_ = {};
+function dtf_(locale, opts) { const k = locale + JSON.stringify(opts); return DTF_[k] || (DTF_[k] = new Intl.DateTimeFormat(locale, opts)); }
 function saipanDate(d) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  return dtf_('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 function saipanTimeOnly(iso) {
-  return iso ? new Date(iso).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) : '';
+  return iso ? dtf_('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(iso)) : '';
 }
 function saipanDateTime(iso) {
-  return iso ? new Date(iso).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  return iso ? dtf_('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso)) : '';
 }
 function addDays(dateStr, n) {
   const d = new Date(dateStr + 'T12:00:00+10:00'); d.setTime(d.getTime() + n * 86400000); return saipanDate(d);
@@ -2113,7 +2120,8 @@ makePicker('repSearch', 'repSearchList', function (e) {
 }, function () {
   // × also clears the time cards shown below
   reportEmp = null; clearMsg('repMsg'); clearReportState();
-  document.getElementById('reportOut').innerHTML = '';
+  document.getElementById('reportOut').innerHTML = ''; REPORT_SEQ++; // A1 (V1): stop a slice run / ignore a pending answer
+  document.getElementById('reportOut').classList.remove('tc-drawing');
   document.getElementById('printBtn').disabled = true;
 });
 document.getElementById('repSearch').addEventListener('input', function () { reportEmp = null; });
@@ -2138,20 +2146,42 @@ async function loadReport() {
     }
     document.getElementById('repSearch').value = reportEmp.name + ' (' + reportEmp.employeeId + ')';
   }
+  const seq = ++REPORT_SEQ; // A1 (V1): this request's number, taken BEFORE it is sent — a newer request or a clear makes it stale
   const result = await call('timecardReport', {
     startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp ? reportEmp.employeeId : ''
   });
-  const out = document.getElementById('reportOut'); out.innerHTML = '';
+  if (seq !== REPORT_SEQ) return; // A1 (V1): a newer request (or a clear) replaced this one — its late answer changes nothing
+  const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
   if (!result.ok) { setMsg('repMsg', false, result.error.message); document.getElementById('printBtn').disabled = true; return; }
   const cards = result.data.cards;
   if (!cards.length) { setMsg('repMsg', false, 'No punches in this period.'); document.getElementById('printBtn').disabled = true; return; }
   const issues = cards.reduce(function (n, c) { return n + c.issues; }, 0);
   setMsg('repMsg', issues === 0, cards.length + ' time card(s) ready.' +
     (issues ? ' ' + issues + ' shift(s) have a missing punch (marked in red) — fix them before payroll.' : ''));
-  cards.forEach(function (c) { out.appendChild(renderTimecard(c, result.data.startDate, result.data.endDate)); });
-  document.getElementById('printBtn').disabled = false;
-  saveReportState(result.data);
-  if (document.getElementById('tcPhotos').checked) togglePhotoPages('reportOut', true); // PHOTO
+  document.getElementById('printBtn').disabled = true; // A1: Print comes on after the last slice
+  renderCards_(out, result.data, seq, function () {
+    document.getElementById('printBtn').disabled = false;
+    saveReportState(result.data);
+    if (document.getElementById('tcPhotos').checked) togglePhotoPages('reportOut', true); // PHOTO
+  });
+}
+// A1: many cards are drawn TC_SLICE at a time so the page stays responsive; Print comes on after the last slice.
+// A newer request (REPORT_SEQ) stops an older run. A short list is drawn at once, exactly as before.
+// V1: REPORT_SEQ goes up when a report is requested and whenever the Time Cards output is cleared (×, the saved view
+// after a refresh). While slices are still being drawn #reportOut has the class tc-drawing: printing (also Ctrl+P / the
+// browser menu) then shows only "still loading" instead of an incomplete set of cards (see @media print).
+let REPORT_SEQ = 0;
+const TC_SLICE = 40;
+function renderCards_(out, data, seq, done) {
+  let i = 0;
+  out.classList.add('tc-drawing');
+  (function slice() {
+    if (seq !== REPORT_SEQ) return; // stopped: whoever replaced this run clears the cards (and tc-drawing)
+    const frag = document.createDocumentFragment();
+    for (const end = Math.min(i + TC_SLICE, data.cards.length); i < end; i++) frag.appendChild(renderTimecard(data.cards[i], data.startDate, data.endDate));
+    out.appendChild(frag);
+    if (i < data.cards.length) setTimeout(slice, 0); else { out.classList.remove('tc-drawing'); done(); }
+  })();
 }
 
 // ---- REFRESH R2: keep the Time Cards choice and result across a page refresh ----
@@ -2172,7 +2202,8 @@ function restoreReportState(showSaved) {
   if (document.getElementById('repSearch').pickerSync) document.getElementById('repSearch').pickerSync();
   reportEmp = st.empId ? (EMPLOYEES.find(function (e) { return e.employeeId === st.empId; }) || { employeeId: st.empId, name: st.empLabel }) : null;
   if (showSaved && data && data.cards) {
-    const out = document.getElementById('reportOut'); out.innerHTML = '';
+    const out = document.getElementById('reportOut'); out.innerHTML = ''; REPORT_SEQ++; // A1 (V1): stop a slice run / ignore a pending answer
+    out.classList.remove('tc-drawing');
     data.cards.forEach(function (c) { out.appendChild(renderTimecard(c, data.startDate, data.endDate)); });
     document.getElementById('printBtn').disabled = !data.cards.length;
     setMsg('repMsg', true, 'Showing the time cards from ' + new Date(st.at).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) + ' — updating…');
@@ -2192,7 +2223,7 @@ function renderTimecard(c, startDate, endDate) {
         title: 'Correct this employee\'s IN / OUT times', onclick: function () { openTcEdit(c, startDate, endDate); } })]),
     el('div', { className: 'tc-company', text: companyFor(c) })
   ]));
-  const fmt = function (d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-US', { timeZone: TZ, month: '2-digit', day: '2-digit', year: 'numeric' }); };
+  const fmt = function (d) { return dtf_('en-US', { timeZone: TZ, month: '2-digit', day: '2-digit', year: 'numeric' }).format(new Date(d + 'T12:00:00+10:00')); };
   const info = el('div', { className: 'tc-info' }, [
     el('div', { className: 'k', text: 'Employee' }), el('div', { className: 'v', text: c.name }),
     el('div', { className: 'k', text: 'Pay period' }), el('div', { className: 'v', text: fmt(startDate) + ' to ' + fmt(endDate) }),
@@ -2238,7 +2269,7 @@ function renderTimecard(c, startDate, endDate) {
   let weekNo = 0, weekFrom = startDate;
   while (d <= endDate) {
     const dt = new Date(d + 'T12:00:00+10:00');
-    const dayLabel = dt.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short', month: 'numeric', day: 'numeric' });
+    const dayLabel = dtf_('en-US', { timeZone: TZ, weekday: 'short', month: 'numeric', day: 'numeric' }).format(dt);
     const rows = byDay[d] || [];
     if (!rows.length) {
       const pn = paidNote(d);
@@ -2291,7 +2322,7 @@ function renderTimecard(c, startDate, endDate) {
       });
     }
     // Week subtotal after Saturday or at the end of the period
-    const isSat = dt.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'short' }) === 'Sat';
+    const isSat = dtf_('en-US', { timeZone: TZ, weekday: 'short' }).format(dt) === 'Sat';
     if (isSat || d === endDate) {
       weekNo++;
       const w = weeks[weekStartOf(d)] || { total: 0, regular: 0, overtime: 0 };
@@ -2481,6 +2512,7 @@ async function voidPaidBatch(btn, batchId, list) {
 }
 // R5: confirm before printing incomplete time cards
 function printTimecards() {
+  if (document.getElementById('reportOut').classList.contains('tc-drawing')) return; // A1 (V1): not every card is drawn yet
   const bad = document.querySelectorAll('#reports .tc-incomplete').length;
   if (bad && !confirm(bad + ' time card(s) are INCOMPLETE (missing clock-in / clock-out or still clocked in).\nThe warning will be printed on those cards. Print anyway?')) return;
   fitPrintPages();
@@ -2540,7 +2572,7 @@ function renderCorrections(list, history) {
   return box;
 }
 function shortDate(dateStr) {
-  return new Date(dateStr + 'T12:00:00+10:00').toLocaleDateString('en-US', { timeZone: TZ, month: 'numeric', day: 'numeric' });
+  return dtf_('en-US', { timeZone: TZ, month: 'numeric', day: 'numeric' }).format(new Date(dateStr + 'T12:00:00+10:00'));
 }
 async function toggleWaiver(btn, r) {
   let reason = '';
