@@ -79,6 +79,8 @@
   .msg:empty { display: none; }
   .msg.ok { background: #e6f4ea; color: #1e5e2c; }
   .msg.err { background: #fdecea; color: #8c1d18; }
+  .msg.info { background: #eef3fb; color: #1f4e9c; }
+  #reportOut.tc-loading { opacity: .45; pointer-events: none; } /* TCNEWEST: old cards while new ones load */
   .note { background: var(--warn-bg); color: var(--warn-ink); padding: 10px 14px; border-radius: 6px; margin-bottom: 18px; font-size: 13px; }
 
   /* ---- employee search ---- */
@@ -2449,8 +2451,8 @@ makePicker('repSearch', 'repSearchList', function (e) {
 }, function () {
   // × also clears the time cards shown below
   reportEmp = null; clearMsg('repMsg'); clearReportState();
-  document.getElementById('reportOut').innerHTML = ''; REPORT_SEQ++; // A1 (V1): stop a slice run / ignore a pending answer
-  document.getElementById('reportOut').classList.remove('tc-drawing');
+  REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not bring cards back
+  document.getElementById('reportOut').innerHTML = ''; document.getElementById('reportOut').classList.remove('tc-drawing');
   document.getElementById('printBtn').disabled = true;
 });
 document.getElementById('repSearch').addEventListener('input', function () { reportEmp = null; });
@@ -2476,9 +2478,13 @@ async function loadReport() {
     document.getElementById('repSearch').value = reportEmp.name + ' (' + reportEmp.employeeId + ')';
   }
   const seq = ++REPORT_SEQ; // A1 (V1): this request's number, taken BEFORE it is sent — a newer request or a clear makes it stale
-  const result = await call('timecardReport', {
-    startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp ? reportEmp.employeeId : ''
-  });
+  setReportLoading(true);
+  let result;
+  try {
+    result = await call('timecardReport', {
+      startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp ? reportEmp.employeeId : ''
+    });
+  } finally { if (seq === REPORT_SEQ) setReportLoading(false); } // TCNEWEST: only the newest request ends the Loading state
   if (seq !== REPORT_SEQ) return; // A1 (V1): a newer request (or a clear) replaced this one — its late answer changes nothing
   const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
   if (!result.ok) { setMsg('repMsg', false, result.error.message); document.getElementById('printBtn').disabled = true; return; }
@@ -2500,6 +2506,20 @@ async function loadReport() {
 // after a refresh). While slices are still being drawn #reportOut has the class tc-drawing: printing (also Ctrl+P / the
 // browser menu) then shows only "still loading" instead of an incomplete set of cards (see @media print).
 let REPORT_SEQ = 0;
+// TCNEWEST (from V2): while the newest Time Cards request runs the old cards are greyed out, Print and "Show time cards"
+// are off and the message says the cards are loading. Ended by the newest answer (ok or error), ×, the saved view and
+// resetTimeCardsView (logout / session end). Print comes back only after the last slice of a complete answer.
+function setReportLoading(on) {
+  const out = document.getElementById('reportOut'), btn = document.querySelector('#livePanel .btn-primary');
+  out.classList.toggle('tc-loading', on);
+  btn.classList.toggle('loading', on); btn.disabled = on;
+  if (!on) return;
+  document.getElementById('printBtn').disabled = true;
+  const m = document.getElementById('repMsg');
+  if (/— updating…$/.test(m.textContent)) return; // saved cards just shown after F5: keep "Showing the time cards from …"
+  m.className = 'msg info';
+  m.textContent = out.children.length ? 'Loading time cards… (the cards below are from before and will be replaced)' : 'Loading time cards…';
+}
 const TC_SLICE = 40;
 function renderCards_(out, data, seq, done) {
   let i = 0;
@@ -2531,8 +2551,8 @@ function restoreReportState(showSaved) {
   if (document.getElementById('repSearch').pickerSync) document.getElementById('repSearch').pickerSync();
   reportEmp = st.empId ? (EMPLOYEES.find(function (e) { return e.employeeId === st.empId; }) || { employeeId: st.empId, name: st.empLabel }) : null;
   if (showSaved && data && data.cards) {
-    const out = document.getElementById('reportOut'); out.innerHTML = ''; REPORT_SEQ++; // A1 (V1): stop a slice run / ignore a pending answer
-    out.classList.remove('tc-drawing');
+    REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not append to the saved cards
+    const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
     data.cards.forEach(function (c) { out.appendChild(renderTimecard(c, data.startDate, data.endDate)); });
     document.getElementById('printBtn').disabled = !data.cards.length;
     setMsg('repMsg', true, 'Showing the time cards from ' + new Date(st.at).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) + ' — updating…');
@@ -2544,10 +2564,10 @@ function clearReportState() {
 }
 // TCCLEAR: logout / idle logout / expired session (endSession) — forget the saved Time Cards and empty
 // the Time Cards page (cards, choices, messages, Print). F5 during the same login still keeps them (R2).
-// V1: no Loading UI (V2 TCNEWEST); REPORT_SEQ++ makes an answer still on its way, or a slice run still drawing, change
-// nothing; the A1 print guard (tc-drawing) is cleared with the cards.
+// V1: REPORT_SEQ++ makes an answer still on its way, or a slice run still drawing, change nothing; the Loading state
+// (TCNEWEST) ends and the A1 print guard (tc-drawing) is cleared with the cards.
 function resetTimeCardsView() {
-  REPORT_SEQ++; // an answer still on its way (or a slice run still drawing) is ignored
+  REPORT_SEQ++; setReportLoading(false); // an answer still on its way (or a slice run still drawing) is ignored
   clearReportState();
   reportEmp = null;
   const rs = document.getElementById('repSearch'); rs.value = ''; if (rs.pickerSync) rs.pickerSync();
