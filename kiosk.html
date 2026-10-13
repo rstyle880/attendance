@@ -415,7 +415,7 @@
       <div class="result error" style="padding-top:4px"><div class="icon">⚠</div></div>
       <div class="brk-name" style="font-size:22px">No clock-in found</div>
       <div class="brk-state" id="noInMsg" style="margin:6px 0 4px;color:#e6edff"></div>
-      <div class="brk-sub">Record CLOCK OUT anyway? Your manager will be notified to add your clock-in time.</div>
+      <div class="brk-sub">Record CLOCK OUT anyway? Your GGM/AGGM will be notified to add your clock-in time.</div>
       <div class="brk-opts">
         <button class="bopt end" id="noInYes" onclick="confirmNoIn(true)">Yes, clock out<small>I started work without clocking in</small></button>
         <button class="bopt start" onclick="confirmNoIn(false)">No — I meant CLOCK IN<small>Record my clock-in now instead</small></button>
@@ -496,6 +496,8 @@ const LS = {
 };
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+// V61SAFE K3: the stored text, or null when nothing is stored — and an ERROR when it cannot be read (lsGet hides the difference)
+function lsRaw(k) { return localStorage.getItem(k); }
 function getConfig() { return { url: lsGet(LS.url, ''), terminalId: lsGet(LS.termId, ''), secret: lsGet(LS.secret, '') }; }
 function isConfigured() { const c = getConfig(); return !!(c.url && c.terminalId && c.secret); }
 const $ = function (id) { return document.getElementById(id); };
@@ -620,13 +622,13 @@ const ANSWER_OK = { clockIn: function (d) { return !!d.rawId; }, clockOut: funct
   kioskBreakStatus: function (d) { return Array.isArray(d.options); }, kioskMyRecords: function (d) { return Array.isArray(d.rows); },
   kioskHome: function (d) { return !!d.terminalId; }, kioskPing: function (d) { return !!d.terminalId; },
   kioskOnBreak: function (d) { return Array.isArray(d.items); }, kioskContent: function (d) { return Array.isArray(d); } };
-async function api(action, payload, timeoutMs) {
+async function api(action, payload, timeoutMs, fixedUrl) {
   const c = getConfig();
   let res;
   const ctl = (typeof AbortController !== 'undefined' && timeoutMs) ? new AbortController() : null;
   const timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null; // KHOME: never hang forever
   try {
-    res = await fetch(c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight
+    res = await fetch(fixedUrl || c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight
       body: JSON.stringify({ action: action, payload: payload }), signal: ctl ? ctl.signal : undefined });
   } catch (e) { throw new NetworkError(ctl && ctl.signal.aborted ? 'timeout' : 'offline'); }
   finally { if (timer) clearTimeout(timer); }
@@ -683,7 +685,7 @@ function hideCamPreview() {
 }
 function resetKiosk() {
   clearTimeout(resultTimer); clearTimeout(idleTimer);
-  mode = null; employeeId = ''; pin = ''; busy = false;
+  KIOSK_FLOW++; mode = null; employeeId = ''; pin = ''; busy = false;
   breakPin = ''; noInPin = ''; clearInterval(brkTick);
   $('flow').classList.add('hidden');
   hideCamPreview(); // CAMPV
@@ -707,7 +709,7 @@ function pillFor(id) {
 // ============================================================================
 function startEntry(m) {
   if (!isConfigured()) { speak(SAY_ERR); showResult('error', '⚠', 'Kiosk not set up', '', 'Please ask an Admin to set up this kiosk.', true); return; }
-  mode = m; employeeId = '';
+  KIOSK_FLOW++; mode = m; employeeId = '';
   pillFor('pillEmpId'); renderEmpId(); $('msgEmpId').textContent = '';
   buildKeypad('keypadEmpId',
     function (d) { if (employeeId.length < 4) { employeeId += d; renderEmpId(); if (employeeId.length === 4) submitEmpId(); } },
@@ -735,48 +737,53 @@ async function submitPin() {
   busy = true; $('keypadPin').classList.add('disabled');
   $('msgPin').className = 'msg info';
   $('msgPin').innerHTML = '<span class="spinner"></span>' + (mode === 'RECORDS' ? 'Loading your records…' : 'Processing…');
-  const c = getConfig();
-  const body = { employeeId: employeeId, pin: pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
-  if (mode === 'IN' || mode === 'OUT') body.localId = c.terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6); // H3: same ID online and offline
+  const m = mode, emp = employeeId, flow = KIOSK_FLOW;
+  const visible = function () { return flow === KIOSK_FLOW && mode === m && employeeId === emp; };
+  const c = getConfig(), at = new Date(nowMs()).toISOString(); // V61SAFE K2: the time of the tap (kept if the punch is saved offline)
+  const body = { employeeId: emp, pin: pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
+  if (m === 'IN' || m === 'OUT') body.localId = c.terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6); // H3: same ID online and offline
+  if (m === 'IN' || m === 'OUT') body.ack = 2; // opt-in stored-row acknowledgment
   // AUTOBREAK: BREAK starts the break in ONE request; only if already on break /
   // paused does the server send back the choices (Pause / Resume / End)
-  const action = { IN: 'clockIn', OUT: 'clockOut', BREAK: 'kioskBreakAction', RECORDS: 'kioskMyRecords' }[mode];
-  if (mode === 'BREAK') body.op = 'AUTO';
-  const photo = (mode === 'IN' || mode === 'OUT') ? capturePhoto() : null; // PHOTO: one frame, before the request
+  const action = { IN: 'clockIn', OUT: 'clockOut', BREAK: 'kioskBreakAction', RECORDS: 'kioskMyRecords' }[m];
+  if (m === 'BREAK') body.op = 'AUTO';
+  const photo = (m === 'IN' || m === 'OUT') ? capturePhoto() : null; // PHOTO: one frame, before the request
   try {
-    const result = await api(action, body);
-    if (!result.ok && mode === 'BREAK' && result.error && /Unknown break action/i.test(result.error.message || '')) {
+    const result = await api(action, body, undefined, c.url);
+    if ((m === 'IN' || m === 'OUT') && (!result || typeof result.ok !== 'boolean' || (!result.ok && (!result.error || typeof result.error.code !== 'string')))) throw new NetworkError('Invalid punch response');
+    if ((m === 'IN' || m === 'OUT') && ((result.ok && !await verifyPunchAck(body, m, result, c)) || (!result.ok && result.error && result.error.code === 'INTERNAL_ERROR'))) throw new NetworkError('Unconfirmed punch');
+    if (!visible()) { if (result.ok && (m === 'IN' || m === 'OUT')) queuePhoto(photo, result.data.rawId, null, c); return; }
+    if (!result.ok && m === 'BREAK' && result.error && /Unknown break action/i.test(result.error.message || '')) {
       delete body.op; // older server: use the two-step way
-      const st = await api('kioskBreakStatus', body);
+      const st = await api('kioskBreakStatus', body, undefined, c.url);
       if (st.ok) { breakPin = body.pin; showBreakChoices(st.data); } else handleError(st.error);
       return;
     }
     if (!result.ok && result.error && result.error.code === 'NO_CLOCK_IN_CONFIRM') { noInPin = body.pin; showNoInConfirm(result.error.message); }
     else if (!result.ok) handleError(result.error);
-    else if (mode === 'RECORDS') showRecords(result.data);
-    else if (mode === 'BREAK' && result.data.needChoice) { breakPin = body.pin; showBreakChoices(result.data); }
-    else if (mode === 'BREAK') { showBreakResult(result.data); refreshOnBreak(); }
-    else { showSuccess(result.data); queuePhoto(photo, result.data && result.data.rawId, null); } // PHOTO: sent after, in the background
+    else if (m === 'RECORDS') showRecords(result.data);
+    else if (m === 'BREAK' && result.data.needChoice) { breakPin = body.pin; showBreakChoices(result.data); }
+    else if (m === 'BREAK') { showBreakResult(result.data); refreshOnBreak(); }
+    else { showSuccess(result.data); queuePhoto(photo, result.data && result.data.rawId, null, c); } // PHOTO: sent after, in the background
   } catch (e) {
-    if (e instanceof NetworkError && (mode === 'IN' || mode === 'OUT')) {
-      const localId = queueOffline(body, mode); queuePhoto(photo, null, localId); speak(SAY_OK);
-      showResult('offline', '⏳', 'Saved on this kiosk', 'Employee ' + employeeId,
-        'No internet right now. Your CLOCK ' + mode + ' at ' + fmtTime(new Date(nowMs()).toISOString()) + ' is saved and will be sent automatically.', false);
+    if (e instanceof NetworkError && (m === 'IN' || m === 'OUT')) {
+      await saveOffline(body, m, at, photo, c, visible); // V61SAFE K2-K4: "NOT confirmed yet" only once really saved (PIN encrypted)
+    } else if (!visible()) { return;
     } else if (e instanceof NetworkError) {
       speak(SAY_ERR);
-      showResult('error', '⚠', 'No internet', '', mode === 'BREAK'
-        ? 'Break needs an internet connection. Please try again in a moment, or tell your manager the time.'
+      showResult('error', '⚠', 'No internet', '', m === 'BREAK'
+        ? 'Break needs an internet connection. Please try again in a moment, or inform your GGM/AGGM of the time.'
         : 'Your records need an internet connection. Please try again in a moment.', true);
     } else {
-      speak(SAY_ERR); showResult('error', '✕', 'Something went wrong', '', 'Please try again or tell your manager.', true);
+      speak(SAY_ERR); showResult('error', '✕', 'Something went wrong', '', 'Please try again or inform your GGM/AGGM.', true);
     }
-  } finally { busy = false; pin = ''; }
+  } finally { if (flow === KIOSK_FLOW) { busy = false; pin = ''; } }
 }
 
 function handleError(err) {
   const code = err && err.code, msg = (err && err.message) || 'Please try again.';
   speak(code === 'DUPLICATE' ? SAY_OK : SAY_ERR);
-  if (code === 'INVALID_LOGIN') { buildPinPad(); pin = ''; renderPin(); setPinMsg(msg + ' Check your Employee ID and PIN.', 'err'); return; }
+  if (code === 'INVALID_LOGIN') { buildPinPad(); pin = ''; renderPin(); setPinMsg(staffText(msg) + ' Check your Employee ID and PIN.', 'err'); return; }
   const titles = { ALREADY_IN: 'Already clocked IN', NOT_IN: 'Not clocked IN', DUPLICATE: 'Already recorded', PIN_LOCKED: 'Temporarily locked',
     INACTIVE: 'Account inactive', TERMINAL_INVALID: 'Kiosk not authorized', ON_BREAK: 'You are on break', BREAK_AUTO: 'Break is automatic',
     BREAK_NONE: 'No break to record', NOT_ON_BREAK: 'Not on break', ALREADY_ON_BREAK: 'Already on break' };
@@ -799,17 +806,23 @@ async function confirmNoIn(yes) {
   busy = true;
   $('screenNoIn').querySelectorAll('.bopt').forEach(function (b) { b.disabled = true; b.style.opacity = '.5'; });
   $('noInStatus').className = 'msg info'; $('noInStatus').innerHTML = '<span class="spinner"></span>Processing…';
-  const c = getConfig();
-  const body = { employeeId: employeeId, pin: noInPin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret };
+  const flow = KIOSK_FLOW, emp = employeeId;
+  const visible = function () { return flow === KIOSK_FLOW && employeeId === emp; };
+  const c = getConfig(), at = new Date(nowMs()).toISOString(); // V61SAFE K2: the time of the tap
+  const body = { employeeId: emp, pin: noInPin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret, ack: 2,
+    localId: c.terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) }; // V61SAFE K1: its own LocalId — a resend or late arrival is the same punch
   if (yes) body.confirmNoIn = true;
   const photo = capturePhoto(); // PHOTO
   try {
-    const r = await api(yes ? 'clockOut' : 'clockIn', body);
-    if (!r.ok) handleError(r.error); else { showSuccess(r.data); queuePhoto(photo, r.data && r.data.rawId, null); }
+    const r = await api(yes ? 'clockOut' : 'clockIn', body, undefined, c.url);
+    if (!r || typeof r.ok !== 'boolean' || (!r.ok && (!r.error || typeof r.error.code !== 'string'))) throw new NetworkError('Invalid punch response');
+    if ((r.ok && !await verifyPunchAck(body, yes ? 'OUT' : 'IN', r, c)) || (!r.ok && r.error && r.error.code === 'INTERNAL_ERROR')) throw new NetworkError('Unconfirmed punch');
+    if (!visible()) { if (r.ok) queuePhoto(photo, r.data.rawId, null, c); return; }
+    if (!r.ok) handleError(r.error); else { showSuccess(r.data); queuePhoto(photo, r.data && r.data.rawId, null, c); }
   } catch (e) {
-    speak(SAY_ERR);
-    showResult('error', '⚠', 'No internet', '', 'Please try again in a moment, or tell your manager the time.', true);
-  } finally { busy = false; noInPin = ''; }
+    if (e instanceof NetworkError) await saveOffline(body, yes ? 'OUT' : 'IN', at, photo, c, visible); // V61SAFE K1: kept like any Clock IN / OUT (V61: "No internet")
+    else if (visible()) { speak(SAY_ERR); showResult('error', '⚠', 'No internet', '', 'Please try again in a moment, or inform your GGM/AGGM of the time.', true); }
+  } finally { if (flow === KIOSK_FLOW) { busy = false; noInPin = ''; } }
 }
 
 // ============================================================================
@@ -873,7 +886,7 @@ async function doBreak(op) {
     refreshOnBreak();
   } catch (e) {
     clearInterval(brkTick); speak(SAY_ERR);
-    showResult('error', '⚠', 'No internet', '', 'Break needs an internet connection. Please try again in a moment, or tell your manager the time.', true);
+    showResult('error', '⚠', 'No internet', '', 'Break needs an internet connection. Please try again in a moment, or inform your GGM/AGGM of the time.', true);
   } finally { busy = false; breakPin = ''; }
 }
 function showBreakResult(data) {
@@ -948,11 +961,22 @@ function showSuccess(data) {
   showResult(cls, '✓', title, data.employeeName || ('Employee ' + data.employeeId), detail, false);
   if (d === 'OUT') refreshOnBreak();
 }
+// V61SAFE STAFFTEXT START — K7: employees are sent to their GGM/AGGM. Server messages stay unchanged (payroll / golden files);
+// only what this page SHOWS is reworded. Job titles and "Ask an Admin" are not touched.
+function staffText(t) {
+  return String(t === undefined || t === null ? '' : t)
+    .replace(/Please (see|talk to) your manager/g, 'Please inform your GGM/AGGM')
+    .replace(/Your manager has been notified/g, 'Your GGM/AGGM has been notified')
+    .replace(/tell your manager the time/g, 'inform your GGM/AGGM of the time')
+    .replace(/tell your manager/g, 'inform your GGM/AGGM')
+    .replace(/Your manager will/g, 'Your GGM/AGGM will');
+}
+// V61SAFE STAFFTEXT END
 function showResult(cls, icon, title, name, detail, needsTap) {
   clearTimeout(resultTimer);
   $('resultBox').className = 'result ' + cls;
   $('resultIcon').textContent = icon; $('resultTitle').textContent = title;
-  $('resultName').textContent = name; $('resultDetail').textContent = detail;
+  $('resultName').textContent = name; $('resultDetail').textContent = staffText(detail); // V61SAFE K7
   $('resultBtn').classList.toggle('hidden', !needsTap);
   showScreen('screenResult');
   resultTimer = setTimeout(resetKiosk, needsTap ? 10000 : 3500);
@@ -965,10 +989,10 @@ function showWarning(data) {
   $('warnTitle').textContent = a.type === 'LONG_SHIFT' ? 'Very long shift' : a.type === 'NO_CLOCK_IN' ? 'No clock-in found' : 'Missed clock-out';
   $('warnWho').textContent = data.employeeName || ('Employee ' + data.employeeId);
   $('warnDone').textContent = '✓ Clocked ' + data.direction + ' at ' + fmtTime(data.originalTimestamp);
-  $('warnText').textContent = a.message;
+  $('warnText').textContent = staffText(a.message); // V61SAFE K7
   $('flow').classList.add('hidden');
   $('warnOverlay').classList.remove('hidden');
-  playAlarm(); setTimeout(function () { speak('Thank you. Please see your manager.'); }, 2700);
+  playAlarm(); setTimeout(function () { speak('Thank you. Please inform your G G M or A G G M.'); }, 2700); // V61SAFE K7: spelled out for the voice
   clearTimeout(warnTimer); warnTimer = setTimeout(closeWarning, 20000);
 }
 function closeWarning() { clearTimeout(warnTimer); $('warnOverlay').classList.add('hidden'); resetKiosk(); }
@@ -1235,39 +1259,203 @@ function showContentItem(it) {
 // ============================================================================
 // Offline queue (clock in / out only)
 // ============================================================================
-function readQueue(key) { try { return JSON.parse(lsGet(key, '[]')) || []; } catch (e) { return []; } }
-function writeQueue(key, q) { lsSet(key, JSON.stringify(q)); }
+// V61SAFE VAULT START — a queued offline PIN is never kept in plain text (V61 safety K4)
+// AES-GCM with a key the browser cannot export (WebCrypto), kept in IndexedDB. seal() answers null when the vault cannot be
+// used (the punch is then NOT saved). open() answers the PIN, null when the text does not open with this kiosk's key, and
+// fails when the vault itself cannot be used (the punch then waits).
+const pinVault = (function () {
+  let keyP = null;
+  function key() {
+    if (!keyP) {
+      keyP = new Promise(function (resolve0, reject0) {
+        const t = setTimeout(function () { reject0(new Error('vault timeout')); }, 5000); // a browser store that never answers
+        const resolve = function (k) { clearTimeout(t); resolve0(k); }, reject = function (e) { clearTimeout(t); reject0(e); };
+        if (typeof indexedDB === 'undefined' || !indexedDB || typeof crypto === 'undefined' || !crypto.subtle) { reject(new Error('no vault')); return; }
+        const rq = indexedDB.open('kiosk_vault', 1);
+        rq.onupgradeneeded = function () { rq.result.createObjectStore('keys'); };
+        rq.onerror = function () { reject(rq.error); };
+        rq.onsuccess = function () {
+          const db = rq.result, get = db.transaction('keys').objectStore('keys').get('pin');
+          get.onerror = function () { reject(get.error); };
+          get.onsuccess = function () {
+            if (get.result) { resolve(get.result); return; }
+            crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']).then(function (k) { // not exportable
+              const tx = db.transaction('keys', 'readwrite'); tx.objectStore('keys').put(k, 'pin');
+              tx.oncomplete = function () { resolve(k); }; tx.onerror = tx.onabort = function () { reject(tx.error); };
+            }, reject);
+          };
+        };
+      });
+      keyP.catch(function () { keyP = null; }); // try again next time
+    }
+    return keyP;
+  }
+  const b64 = function (u8) { let s = ''; for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]); return btoa(s); };
+  const unb64 = function (s) { const b = atob(s), u8 = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i); return u8; };
+  return {
+    ready: function () { return key().then(function () { return true; }, function () { return false; }); },
+    seal: async function (pin) {
+      try {
+        const k = await key(), iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new TextEncoder().encode(String(pin)));
+        return 'v1.' + b64(iv) + '.' + b64(new Uint8Array(ct));
+      } catch (e) { return null; }
+    },
+    open: async function (sealed) {
+      const p = String(sealed).split('.');
+      if (p[0] !== 'v1' || p.length !== 3) return null;
+      const k = await key(); // fails when the vault cannot be used
+      try { return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(p[1]) }, k, unb64(p[2]))); }
+      catch (e) { return null; }
+    }
+  };
+})();
+// V61SAFE VAULT END
+function readQueue(key) { const r = loadList(key); return r.ok ? r.list : []; } // to show / choose only — a list is never rewritten from this
+// V61SAFE K3: { ok: true, list } — or { ok: false } when a stored list exists but cannot be read safely (a storage error, or
+// text that is not a list). Nothing stored yet = an empty list.
+function loadList(key) {
+  let raw;
+  try { raw = lsRaw(key); } catch (e) { return { ok: false }; }
+  if (raw === null || raw === undefined) return { ok: true, list: [] };
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? { ok: true, list: v } : { ok: false }; } catch (e) { return { ok: false }; }
+}
+// V61SAFE K3: true only when the browser really kept the list (lsSet hides storage errors, so it is read back)
+function writeQueue(key, q) { const s = JSON.stringify(q); lsSet(key, s); return lsGet(key, null) === s; }
+// V61SAFE K3: every change re-reads the STORED list (never a copy held across a request), so a punch saved meanwhile is never
+// overwritten — and a stored list that cannot be read safely is never written (false). fn changes the list in place.
+function editList(key, fn) { const r = loadList(key); if (!r.ok) return false; fn(r.list); return writeQueue(key, r.list); }
+function dropFrom(q, localId) { for (let i = q.length - 1; i >= 0; i--) if (q[i].localId === localId) q.splice(i, 1); }
+// Punch context survives UI changes; acknowledgments identify the actual stored row.
+let KIOSK_FLOW = 0;
+function punchAckMatches(p, dir, r) {
+  const d = r && r.ok && r.data, a = d && d.ack;
+  if (!d || !a || a.protocol !== 2) return false;
+  if (['rawId', 'localId', 'employeeId', 'direction', 'terminalId'].some(function (f) { return typeof a[f] !== 'string' || !a[f]; })) return false;
+  return typeof d.rawId === 'string' && d.rawId === a.rawId &&
+    d.employeeId === a.employeeId && d.direction === a.direction && d.terminalId === a.terminalId &&
+    a.localId === String(p.localId) && a.employeeId === String(p.employeeId) &&
+    a.direction === dir && a.terminalId === String(p.terminalId);
+}
+// Confirm the claimed RawID against the server's LocalId lookup; request echoes are not proof.
+async function verifyPunchAck(p, dir, r, who) {
+  if (!punchAckMatches(p, dir, r)) return false;
+  try {
+    const v = await api('verifyKioskPunch', { terminalId: p.terminalId, terminalSecret: who.secret,
+      localId: p.localId, employeeId: p.employeeId, direction: dir, rawId: r.data.rawId }, undefined, p.url || who.url);
+    return punchAckMatches(p, dir, v) && v.data.rawId === r.data.rawId;
+  } catch (e) { return false; } // old server or lost verification: retain original evidence
+}
+function queueBelongsHere(x, c) { return !!(x.terminalId && x.url && x.terminalId === c.terminalId && x.url === c.url); }
+const VAULT_WAIT_MS = 5000; // the longest the kiosk waits for the PIN vault
+const EVIDENCE_MAX = 2000;  // refused / unsaved punches kept on this kiosk until an Admin clears the reviewed list (about 0.5 MB)
+// the value of p, or 'TIMEOUT' after ms (null if p fails) — never waits for ever
+function within(p, ms) {
+  return new Promise(function (resolve) {
+    const t = setTimeout(function () { resolve('TIMEOUT'); }, ms);
+    Promise.resolve(p).then(function (v) { clearTimeout(t); resolve(v); }, function () { clearTimeout(t); resolve(null); });
+  });
+}
+// V61SAFE K2 / K4: saves the offline copy of a punch: the time of the TAP (punch.at) and its PIN already ENCRYPTED
+// (punch.pinSealed) — a plain-text PIN is never stored. Returns its LocalId once really saved on this kiosk, otherwise ''.
 function queueOffline(punch, dir) {
-  const q = readQueue(LS.queue);
   const localId = punch.localId || (getConfig().terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6)); // H3: reuse the online punch's ID
-  q.push({ localId: localId,
-    direction: dir, originalTimestamp: new Date(nowMs()).toISOString(), employeeId: punch.employeeId, pin: punch.pin }); // AUDIT2 B1: corrected time
-  writeQueue(LS.queue, q); updateStatusBar();
-  return localId;
+  const item = { localId: localId, direction: dir, originalTimestamp: punch.at || new Date(nowMs()).toISOString(), // AUDIT2 B1: corrected time
+    employeeId: punch.employeeId, pinSealed: punch.pinSealed || '', terminalId: punch.terminalId || getConfig().terminalId, url: punch.url || getConfig().url, proto: 2 };
+  const saved = editList(LS.queue, function (q) { if (!q.some(function (x) { return x.localId === localId; })) q.push(item); });
+  updateStatusBar();
+  return saved ? localId : '';
+}
+// V61SAFE K1-K4: a Clock IN / OUT got no answer. The PIN is encrypted FIRST; the punch is shown as kept ("NOT confirmed
+// yet") only once it really is saved on this kiosk. Otherwise nothing with the PIN is kept: the ID, type, tap time and
+// LocalId go to the evidence list and the employee is asked to inform the GGM/AGGM.
+async function saveOffline(body, dir, at, photo, originalConfig, visible) {
+  const who = originalConfig || getConfig();
+  const show = visible || function () { return true; };
+  const sealed = await within(pinVault.seal(body.pin), VAULT_WAIT_MS);
+  const good = typeof sealed === 'string' && sealed !== 'TIMEOUT';
+  const localId = good ? queueOffline({ localId: body.localId, employeeId: body.employeeId, at: at, pinSealed: sealed, terminalId: who.terminalId, url: who.url }, dir) : '';
+  if (localId) {
+    queuePhoto(photo, null, localId, who); if (!show()) return; speak(SAY_OK);
+    showResult('offline', '⏳', 'NOT confirmed yet', 'Employee ' + body.employeeId, 'No internet right now. Your CLOCK ' + dir + ' at ' + fmtTime(at) +
+      ' is saved on this kiosk and will be sent automatically. If it is refused, please inform your GGM/AGGM.', false);
+    return;
+  }
+  keepEvidence({ localId: body.localId, employeeId: body.employeeId, direction: dir, originalTimestamp: at, terminalId: who.terminalId, url: who.url, code: 'NOT_SAVED',
+    reason: 'NOT saved on this kiosk (' + (good ? 'kiosk storage failed' : 'the PIN could not be encrypted') + ') — the employee was told to inform the GGM/AGGM' });
+  updateStatusBar(); if (!show()) return; speak(SAY_ERR);
+  showResult('error', '⚠', 'NOT saved', 'Employee ' + body.employeeId, 'Your CLOCK ' + dir + ' could NOT be confirmed. Please inform your GGM/AGGM of the time: ' + fmtTime(at) + '.', true);
+}
+// V61SAFE K5: a refused or unsaved punch is kept here as evidence (never its PIN) until an Admin clears the reviewed list.
+// Never truncated: false when the list is full or cannot be read / saved safely.
+function keepEvidence(rec) {
+  let room = true;
+  const saved = editList(LS.rejected, function (rej) {
+    if (rec.localId && rej.some(function (x) { return x.localId === rec.localId; })) return; // already kept (an earlier, interrupted try)
+    if (rej.length >= EVIDENCE_MAX) { room = false; return; }
+    rej.push(rec);
+  });
+  return saved && room;
+}
+// V61SAFE K5: the evidence is kept FIRST, then the punch leaves the queue. When the evidence list is full the punch stays in
+// the queue marked refused (its encrypted PIN removed): never sent again; it moves to the list once the Admin cleared it.
+// false only when nothing could be saved.
+function moveToEvidence(item, reason, code) {
+  if (keepEvidence({ localId: item.localId, employeeId: item.employeeId, direction: item.direction, originalTimestamp: item.originalTimestamp, terminalId: item.terminalId || '', url: item.url || '', reason: reason, code: code || '' })) {
+    return editList(LS.queue, function (q) { dropFrom(q, item.localId); });
+  }
+  return editList(LS.queue, function (q) { q.forEach(function (x) {
+    if (x.localId === item.localId) { x.refused = { reason: reason, code: code || '' }; delete x.pinSealed; delete x.pin; } }); });
+}
+// V61SAFE K4: a queue saved by the V61 page holds plain-text PINs. Each is encrypted and opened back; the encrypted copies
+// replace the plain ones in ONE write of the stored list (kept only if read back). If anything fails those punches stay
+// exactly as they were (and sync as on V61) — never lost, never half-written.
+async function sealLegacyPins() {
+  const done = {};
+  for (const x of readQueue(LS.queue).filter(function (y) { return y.pin && !y.pinSealed; })) {
+    const p = String(x.pin), s = await within(pinVault.seal(p), VAULT_WAIT_MS);
+    if (typeof s !== 'string' || s === 'TIMEOUT') break; // no vault right now: try again later
+    if ((await within(pinVault.open(s), VAULT_WAIT_MS)) === p) done[x.localId] = { p: p, s: s };
+  }
+  if (!Object.keys(done).length) return false;
+  return editList(LS.queue, function (q) { q.forEach(function (x) {
+    const d = done[x.localId]; if (d && !x.pinSealed && String(x.pin) === d.p) { x.pinSealed = d.s; delete x.pin; } }); });
 }
 let syncing = false;
 async function syncQueue() {
   if (syncing || !isConfigured()) return;
-  let q = readQueue(LS.queue);
-  if (!q.length) { updateStatusBar(); return; }
+  if (!readQueue(LS.queue).length) { updateStatusBar(); return; }
   syncing = true;
   const c = getConfig();
   try {
-    while (q.length) {
-      const item = q[0]; let result;
+    await sealLegacyPins();
+    const wait = {}; // V61SAFE K6: an employee with a punch kept for later in this round — their later punches wait too (in order)
+    for (const item of readQueue(LS.queue)) {
+      if (!queueBelongsHere(item, c)) continue; // unbound legacy or another setup: evidence retained, never redirected
+      if (wait[item.employeeId]) continue;
+      if (item.refused) { if (!moveToEvidence(item, item.refused.reason, item.refused.code)) break; continue; } // V61SAFE K5: never sent again
+      let pin = item.pin; // a V61 punch whose PIN could not be encrypted yet: sent as on V61
+      if (!pin) {
+        const opened = item.pinSealed ? await within(pinVault.open(item.pinSealed).then(function (p) { return p === null ? 'BAD' : p; }), VAULT_WAIT_MS) : 'BAD';
+        if (opened === 'BAD') { if (!moveToEvidence(item, 'PIN could not be recovered on this kiosk — not sent', 'PIN_UNAVAILABLE')) break; continue; } // never sent with a wrong PIN
+        if (typeof opened !== 'string' || opened === 'TIMEOUT') break; // the vault does not answer right now: keep everything, try again later
+        pin = opened;
+      }
+      if (!queueBelongsHere(item, getConfig())) break; // setup changed while the PIN was opened
+      let result;
       try {
         result = await api('syncOfflinePunch', { localId: item.localId, direction: item.direction, originalTimestamp: item.originalTimestamp,
-          employeeId: item.employeeId, pin: item.pin, method: 'PIN', terminalId: c.terminalId, terminalSecret: c.secret });
+          employeeId: item.employeeId, pin: pin, method: 'PIN', terminalId: item.terminalId, terminalSecret: c.secret, ack: 2 }, undefined, item.url);
       } catch (e) { break; }
-      if (!result.ok && result.error && result.error.code === 'TERMINAL_INVALID') break;
-      if (!result.ok && result.error && (result.error.code === 'BUSY' || result.error.code === 'INTERNAL_ERROR')) break; // C2: temporary — keep it, retry next sync
-      if (!result.ok) {
-        const rej = readQueue(LS.rejected);
-        rej.push({ employeeId: item.employeeId, direction: item.direction, originalTimestamp: item.originalTimestamp, reason: result.error ? result.error.message : 'Rejected' });
-        writeQueue(LS.rejected, rej.slice(-50));
-      }
-      if (result.ok && result.data && result.data.rawId) linkPhoto(item.localId, result.data.rawId); // PHOTO
-      q.shift(); writeQueue(LS.queue, q);
+      if (!result || typeof result.ok !== 'boolean' || (!result.ok && (!result.error || typeof result.error.code !== 'string'))) break;
+      const code = !result.ok && result.error ? result.error.code : '';
+      if (code === 'TERMINAL_INVALID') break;
+      if (code === 'BUSY' || code === 'INTERNAL_ERROR') break; // C2: temporary — keep it, retry next sync
+      if (code === 'PIN_LOCKED') { wait[item.employeeId] = 1; continue; } // V61SAFE K6: locked for now — kept, sent again later
+      if (!result.ok) { if (!moveToEvidence(item, result.error ? result.error.message : 'Rejected', code)) break; continue; }
+      if (!await verifyPunchAck(item, item.direction, result, c)) break; // unknown/mismatched acknowledgment keeps evidence and photo
+      if (result.data && result.data.rawId) linkPhoto(item.localId, result.data.rawId, c); // PHOTO
+      editList(LS.queue, function (q) { dropFrom(q, item.localId); });
     }
   } finally { syncing = false; updateStatusBar(); flushPhotos(); }
 }
@@ -1351,8 +1539,10 @@ function scheduleHome(ms) { // small random delay so the two kiosks never hit th
 
 function updateStatusBar() {
   const bar = $('statusBar');
-  const pending = readQueue(LS.queue).length, rejected = readQueue(LS.rejected).length;
+  const q = readQueue(LS.queue), held = q.filter(function (x) { return x.refused; }).length, pending = q.length - held, rejected = readQueue(LS.rejected).length;
   if (!isConfigured()) { bar.className = 'status warn'; bar.textContent = 'Kiosk not set up — Admin: press and hold the gear icon for 3 seconds.'; }
+  else if (q.some(function (x) { return !queueBelongsHere(x, getConfig()); })) { bar.className = 'status warn'; bar.textContent = 'Pending punches belong to another or an unknown kiosk setup — kept for Admin recovery.'; }
+  else if (held) { bar.className = 'status warn'; bar.textContent = 'Rejected punch list is FULL — ' + held + ' more kept on this kiosk. Admin: open setup, review and clear the list.'; } // V61SAFE K5
   else if (pending) { bar.className = 'status warn'; bar.textContent = pending + ' punch(es) waiting to sync…'; }
   else if (rejected) { bar.className = 'status warn'; bar.textContent = rejected + ' offline punch(es) need Admin review (open setup).'; }
   else if (Math.abs(clockOffset) > 60000) {
@@ -1429,17 +1619,20 @@ function capturePhoto() {
     return url.length > 26000 ? null : url.split(',')[1];
   } catch (e) { return null; }
 }
-function queuePhoto(image, rawId, localId) {
+function queuePhoto(image, rawId, localId, originalConfig) {
   if (!image || (!rawId && !localId)) return;
-  const q = readQueue(PHOTO_Q).filter(function (x) { return Date.now() - x.at < 3 * 86400000; });
-  q.push({ rawId: rawId || '', localId: localId || '', image: image, at: Date.now() });
-  writeQueue(PHOTO_Q, q.slice(-30)); // at most 30 photos wait on this kiosk
+  const c = originalConfig || getConfig();
+  editList(PHOTO_Q, function (q) {
+    // Pending photo evidence is kept until an index-verified upload; never expire or truncate it.
+    q.push({ rawId: rawId || '', localId: localId || '', image: image, at: Date.now(), terminalId: c.terminalId, url: c.url });
+  });
   if (rawId) setTimeout(flushPhotos, 1500);
 }
-function linkPhoto(localId, rawId) {
-  const q = readQueue(PHOTO_Q);
-  q.forEach(function (x) { if (x.localId === localId) x.rawId = rawId; });
-  writeQueue(PHOTO_Q, q);
+function linkPhoto(localId, rawId, originalConfig) {
+  const c = originalConfig || getConfig();
+  editList(PHOTO_Q, function (q) {
+    q.forEach(function (x) { if (x.localId === localId && queueBelongsHere(x, c)) x.rawId = rawId; });
+  });
 }
 let photoBusy = false;
 async function flushPhotos() {
@@ -1447,16 +1640,20 @@ async function flushPhotos() {
   photoBusy = true;
   const c = getConfig();
   try {
-    let q = readQueue(PHOTO_Q);
-    for (const item of q.slice()) {
-      if (!item.rawId) continue;
+    for (const item of readQueue(PHOTO_Q)) {
+      if (!item.rawId || !queueBelongsHere(item, c)) continue; // unknown legacy owner is held, never guessed
+      if (!queueBelongsHere(item, getConfig())) break;
       let r;
-      try { r = await api('uploadPunchPhoto', { terminalId: c.terminalId, terminalSecret: c.secret, rawId: item.rawId, image: item.image }); }
-      catch (e) { break; } // offline: keep them for later
-      if (r && (r.ok || (r.error && r.error.code !== 'INTERNAL_ERROR'))) { // saved, or will never be accepted
-        q = readQueue(PHOTO_Q).filter(function (x) { return x.rawId !== item.rawId; });
-        writeQueue(PHOTO_Q, q);
-      }
+      try { r = await api('uploadPunchPhoto', { terminalId: item.terminalId, terminalSecret: c.secret, rawId: item.rawId, image: item.image }, undefined, item.url); }
+      catch (e) { break; }
+      if (r && r.ok && r.data && r.data.rawId === item.rawId && r.data.indexVerified === true &&
+          r.data.terminalId === item.terminalId && typeof r.data.photoId === 'string' && r.data.photoId &&
+          typeof r.data.fileId === 'string' && r.data.fileId && (r.data.saved === true || r.data.duplicate === true)) {
+        editList(PHOTO_Q, function (q) {
+          for (let i = q.length - 1; i >= 0; i--) if (q[i].rawId === item.rawId && q[i].localId === item.localId &&
+            q[i].terminalId === item.terminalId && q[i].url === item.url && q[i].at === item.at && q[i].image === item.image) q.splice(i, 1);
+        });
+      } // unconfirmed/error upload retains the photo
     }
   } finally { photoBusy = false; }
 }
@@ -1493,7 +1690,12 @@ function openSetup() {
   $('setupUrl').value = c.url; $('setupTermId').value = c.terminalId; $('setupSecret').value = ''; $('setupResult').textContent = '';
   const rej = readQueue(LS.rejected), pending = readQueue(LS.queue);
   $('setupQueue').textContent = 'Last home-screen load: ' + (lsGet('kiosk_last_home_ms', '') ? lsGet('kiosk_last_home_ms', '') + ' ms' : '—') +
-    (homeError ? ' (last error: ' + homeError + ')' : '') + '\nPending sync: ' + pending.length + '\nRejected offline punches (check in Admin portal → Clock In / Out): ' + rej.length +
+    (homeError ? ' (last error: ' + homeError + ')' : '') + '\nPending sync: ' + pending.filter(function (x) { return !x.refused; }).length +
+    (pending.some(function (x) { return x.refused; }) ? '\nRefused, waiting for room in the list below (not sent again): ' + pending.filter(function (x) { return x.refused; }).length : '') + // V61SAFE K5
+    '\nHeld for setup/legacy recovery: ' + pending.filter(function (x) { return !queueBelongsHere(x, c); }).length +
+    pending.filter(function (x) { return !queueBelongsHere(x, c); }).map(function (x) { return '\n • ID ' + x.employeeId + ' ' + x.direction +
+      ' ' + saipanStamp(x.originalTimestamp) + ' — LocalId ' + x.localId + ' (original setup unknown or different; kept, not sent)'; }).join('') +
+    '\nRejected offline punches (check in Admin portal → Clock In / Out): ' + rej.length +
     rej.map(function (r) { return '\n • ID ' + r.employeeId + '  ' + (r.direction === 'IN' ? 'Clock IN' : r.direction === 'OUT' ? 'Clock OUT' : r.direction) +
       '  ' + saipanStamp(r.originalTimestamp) + ' — ' + r.reason; }).join('');
   $('setupReviewed').classList.toggle('hidden', !rej.length);
@@ -1512,10 +1714,11 @@ function markRejectedReviewed() {
   const n = readQueue(LS.rejected).length;
   if (!n) return;
   if (!confirm('Clear ' + n + ' rejected offline punch(es) from this kiosk?\n\nDo this only AFTER checking each one in the Admin portal (Clock In / Out) and adding any missing punch.')) return;
-  writeQueue(LS.rejected, []);
+  const cleared = writeQueue(LS.rejected, []);
   updateStatusBar();
   openSetup(); // refresh the panel
-  $('setupResult').className = 'result-line ok'; $('setupResult').textContent = 'List cleared ✓';
+  $('setupResult').className = 'result-line ' + (cleared ? 'ok' : 'err'); $('setupResult').textContent = cleared ? 'List cleared ✓' : 'The list could not be cleared — try again.';
+  if (cleared) syncQueue(); // V61SAFE K5: refused punches held while the list was full move into it now (never sent again)
 }
 function closeSetup() { $('setupOverlay').classList.add('hidden'); $('setupSecret').value = ''; }
 async function testAndSaveSetup() {
@@ -1530,6 +1733,8 @@ async function testAndSaveSetup() {
       body: JSON.stringify({ action: 'kioskPing', payload: { terminalId: termId, terminalSecret: secret } }) });
     const result = await res.json();
     if (!result.ok) { out.className = 'result-line err'; out.textContent = result.error.message; return; }
+    const old = getConfig(), pending = loadList(LS.queue);
+    if (!pending.ok || ((url !== old.url || termId !== old.terminalId) && pending.list.length)) { out.className = 'result-line err'; out.textContent = 'Pending or unreadable punch evidence must be recovered before changing this kiosk setup.'; return; }
     lsSet(LS.url, url); lsSet(LS.termId, termId); lsSet(LS.secret, secret);
     lsSet(LS.venueName, result.data.venueName || result.data.venueId);
     lsSet(LS.venueId, result.data.venueId || '');
@@ -1553,7 +1758,7 @@ function showVenue() {
 }
 
 // ---- start ----
-showVenue(); updateStatusBar(); resetKiosk(); renderAnnouncements(); syncQueue(); refreshHome(); // KHOME: saved announcements show instantly
+showVenue(); updateStatusBar(); resetKiosk(); renderAnnouncements(); pinVault.ready(); sealLegacyPins(); syncQueue(); refreshHome(); // KHOME: saved announcements show instantly; V61SAFE K4: V61 queue PINs encrypted
 </script>
 </body>
 </html>
