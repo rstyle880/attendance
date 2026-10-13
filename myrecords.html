@@ -98,12 +98,12 @@
     </div>
     <div class="card">
       <h2 style="margin:0 0 4px;font-size:18px">Report a problem</h2>
-      <p class="note" style="margin-top:0">For example a missed clock-in or clock-out, or a wrong time. Your manager will see it.</p>
+      <p class="note" style="margin-top:0">For example a missed clock-in or clock-out, or a wrong time. Your GGM/AGGM will see it.</p>
       <label for="repDate">Day</label>
       <select id="repDate"></select>
       <label for="repMsg">What is wrong?</label>
       <textarea id="repMsg" maxlength="500" placeholder="e.g. I forgot to clock out on Oct 5 — I left at 2:30 PM."></textarea>
-      <button class="primary" id="repBtn" onclick="report()">Send to my manager</button>
+      <button class="primary" id="repBtn" onclick="report()">Send to my GGM/AGGM</button>
       <div class="msg" id="repStatus"></div>
     </div>
   </section>
@@ -112,6 +112,17 @@
 const TZ = 'Pacific/Saipan';
 let S = null, tab = 'current', endsAt = 0, tick = null;
 const $ = function (id) { return document.getElementById(id); };
+// V61SAFE STAFFTEXT START — K7: employees are sent to their GGM/AGGM. Server messages stay unchanged; only what this page
+// SHOWS is reworded (same phrase map as the kiosk). Job titles are not touched.
+function staffText(t) {
+  return String(t === undefined || t === null ? '' : t)
+    .replace(/Please (see|talk to) your manager/g, 'Please inform your GGM/AGGM')
+    .replace(/Your manager has been notified/g, 'Your GGM/AGGM has been notified')
+    .replace(/tell your manager the time/g, 'inform your GGM/AGGM of the time')
+    .replace(/tell your manager/g, 'inform your GGM/AGGM')
+    .replace(/Your manager will/g, 'Your GGM/AGGM will');
+}
+// V61SAFE STAFFTEXT END
 function apiUrl() {
   const m = location.hash.match(/api=([^&]+)/);
   return API_URL.indexOf('http') === 0 ? API_URL : (m ? decodeURIComponent(m[1]) : '');
@@ -139,7 +150,7 @@ async function login() {
   try {
     const r = await api('employeeRecordsLogin', { employeeId: id, pin: pin });
     $('pin').value = '';
-    if (!r.ok) { $('loginMsg').textContent = r.error.message; return; }
+    if (!r.ok) { $('loginMsg').textContent = staffText(r.error.message); return; } // V61SAFE K7
     S = r.data; startTimer(r.data.sessionSeconds || 300); render();
   } catch (e) { $('loginMsg').textContent = e.message; }
   finally { $('loginBtn').disabled = false; }
@@ -184,7 +195,7 @@ function showPeriod(p) {
   let lastWeek = null;
   days.forEach(function (x, i) {
     const div = document.createElement('div'); div.className = 'day';
-    const warn = x.flag === 'MISSING_OUT' ? 'Missing clock-out — tell your manager' : x.flag === 'MISSING_IN' ? 'Missing clock-in — tell your manager' : '';
+    const warn = x.flag === 'MISSING_OUT' ? 'Missing clock-out — inform your GGM/AGGM' : x.flag === 'MISSING_IN' ? 'Missing clock-in — inform your GGM/AGGM' : '';
     const moved = x.venueOut && x.venueOut !== x.venueIn ? ' · ' + x.venueIn.replace('VEN-', '') + ' → ' + x.venueOut.replace('VEN-', '') : '';
     div.innerHTML = '<div class="d"></div><div class="h"></div><div class="t"></div><div></div><div class="x"></div>';
     div.children[0].textContent = fmtD(x.date);
@@ -227,13 +238,13 @@ async function report() {
   $('repBtn').disabled = true;
   try {
     const r = await api('employeeReportProblem', { session: S.session, date: $('repDate').value, message: msg });
-    if (!r.ok) { $('repStatus').className = 'msg err'; $('repStatus').textContent = r.error.message; if (r.error.code === 'AUTH_REQUIRED' || /session/i.test(r.error.message)) setTimeout(function () { logout(r.error.message); }, 1500); return; }
-    $('repStatus').className = 'msg ok'; $('repStatus').textContent = '✓ Sent. Your manager will check it.'; $('repMsg').value = '';
+    if (!r.ok) { $('repStatus').className = 'msg err'; $('repStatus').textContent = staffText(r.error.message); if (r.error.code === 'AUTH_REQUIRED' || /session/i.test(r.error.message)) setTimeout(function () { logout(staffText(r.error.message)); }, 1500); return; } // V61SAFE K7
+    $('repStatus').className = 'msg ok'; $('repStatus').textContent = '✓ Sent. Your GGM/AGGM will check it.'; $('repMsg').value = '';
   } catch (e) { $('repStatus').className = 'msg err'; $('repStatus').textContent = e.message; }
   finally { $('repBtn').disabled = false; }
 }
 $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') login(); });
-if (!apiUrl()) { $('loginMsg').textContent = 'This page is not set up yet. Please tell your manager.'; $('loginBtn').disabled = true; }
+if (!apiUrl()) { $('loginMsg').textContent = 'This page is not set up yet. Please inform your GGM/AGGM.'; $('loginBtn').disabled = true; }
 </script>
 </body>
 </html>
