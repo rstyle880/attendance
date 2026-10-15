@@ -1358,9 +1358,12 @@ function releaseSlot() {
   const next = waitQueue.shift();
   if (next) next(); else inFlight = Math.max(0, inFlight - 1);
 }
-async function postApi(url, action, payload) {
+async function postApi(url, action, payload, beforeSend) {
   await acquireSlot();
-  try { return await postApiNow(url, action, payload); } finally { releaseSlot(); }
+  try {
+    if (beforeSend) beforeSend(); // The session may have ended while this request waited for a slot.
+    return await postApiNow(url, action, payload);
+  } finally { releaseSlot(); }
 }
 async function postApiNow(url, action, payload) {
   if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[^/]+\/exec$/.test(url)) {
@@ -1464,18 +1467,18 @@ async function call(action, payload, opts) {
   if (bg) body.bg = true; else lastServerTouch = Date.now();
   const idemp = IDEMP_OK && SAVE_ACTIONS.test(action);
   if (idemp) body.requestId = newRequestId(); // IDEMP: once per click — never a new one on retry
-  let result = await postApi(url, action, body);
+  let result = await postApi(url, action, body, stale);
   stale();
   if (!result.ok && result.error && RETRYABLE[result.error.code] && READ_ACTIONS.test(action)) {
     await new Promise(function (r) { setTimeout(r, 1500); });
     stale(); // no retry for a session that ended meanwhile
-    result = await postApi(url, action, body); // FIX14 #1: one automatic retry for reads
+    result = await postApi(url, action, body, stale); // FIX14 #1: one automatic retry for reads
     stale();
   }
   for (let i = 1; idemp && i <= 3 && !result.ok && result.error && SAVE_RETRY[result.error.code]; i++) {
     await new Promise(function (r) { setTimeout(r, 2000 * i); }); // IDEMP: 2 s, 4 s, 6 s
     stale();
-    result = await postApi(url, action, body); // the SAME body = the same request ID
+    result = await postApi(url, action, body, stale); // the SAME body = the same request ID
     stale();
   }
   if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') { // only the CURRENT session's (stale() above)
