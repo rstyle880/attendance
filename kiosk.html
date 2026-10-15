@@ -625,19 +625,30 @@ const ANSWER_OK = { clockIn: function (d) { return !!d.rawId; }, clockOut: funct
   kioskOnBreak: function (d) { return Array.isArray(d.items); }, kioskContent: function (d) { return Array.isArray(d); } };
 async function api(action, payload, timeoutMs, fixedUrl) {
   const c = getConfig();
-  let res;
-  const ctl = (typeof AbortController !== 'undefined' && timeoutMs) ? new AbortController() : null;
-  const timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null; // KHOME: never hang forever
+  // Bound fetch AND body parsing, including clients where abort is unavailable or ignored.
+  const limit = typeof timeoutMs === 'number' && isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 30000;
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timer;
+  const deadline = new Promise(function (_, reject) {
+    timer = setTimeout(function () {
+      if (ctl) ctl.abort();
+      reject(new NetworkError('timeout'));
+    }, limit);
+  });
   try {
-    res = await fetch(fixedUrl || c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight
-      body: JSON.stringify({ action: action, payload: payload }), signal: ctl ? ctl.signal : undefined });
-  } catch (e) { throw new NetworkError(ctl && ctl.signal.aborted ? 'timeout' : 'offline'); }
-  finally { if (timer) clearTimeout(timer); }
-  if (!res.ok) throw new NetworkError('HTTP ' + res.status);
-  let out;
-  try { out = await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
-  if (out && out.ok && ANSWER_OK[action] && !(out.data && ANSWER_OK[action](out.data))) throw new NetworkError('Bad response'); // RESPCHECK
-  return out;
+    return await Promise.race([(async function () {
+      let res;
+      try {
+        res = await fetch(fixedUrl || c.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: action, payload: payload }), signal: ctl ? ctl.signal : undefined });
+      } catch (e) { throw new NetworkError(ctl && ctl.signal.aborted ? 'timeout' : 'offline'); }
+      if (!res.ok) throw new NetworkError('HTTP ' + res.status);
+      let out;
+      try { out = await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
+      if (out && out.ok && ANSWER_OK[action] && !(out.data && ANSWER_OK[action](out.data))) throw new NetworkError('Bad response');
+      return out;
+    })(), deadline]);
+  } finally { clearTimeout(timer); }
 }
 
 // ============================================================================
@@ -1646,16 +1657,20 @@ function linkPhoto(localId, rawId, originalConfig) {
 }
 let photoBusy = false;
 async function flushPhotos() {
-  if (photoBusy || !isConfigured()) return;
+  if (photoBusy || !isConfigured() || !cameraOn) return;
   photoBusy = true;
   const c = getConfig();
   try {
     for (const item of readQueue(PHOTO_Q)) {
       if (!item.rawId || !queueBelongsHere(item, c)) continue; // unknown legacy owner is held, never guessed
-      if (!queueBelongsHere(item, getConfig())) break;
+      if (!cameraOn || !queueBelongsHere(item, getConfig())) break;
       let r;
       try { r = await api('uploadPunchPhoto', { terminalId: item.terminalId, terminalSecret: c.secret, rawId: item.rawId, image: item.image }, undefined, item.url); }
       catch (e) { break; }
+      if (r && !r.ok && r.error && r.error.code === 'CAMERA_OFF') {
+        if (queueBelongsHere(item, getConfig())) applyServerCamera('OFF');
+        break; // Keep every photo; the normal eligible flush resumes after camera ON.
+      }
       if (r && r.ok && r.data && r.data.rawId === item.rawId && r.data.indexVerified === true &&
           r.data.terminalId === item.terminalId && typeof r.data.photoId === 'string' && r.data.photoId &&
           typeof r.data.fileId === 'string' && r.data.fileId && (r.data.saved === true || r.data.duplicate === true)) {
