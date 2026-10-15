@@ -1582,6 +1582,70 @@ function updateStatusBar() {
 // ============================================================================
 const PHOTO_Q = 'kiosk_photoQueue';
 let cameraOn = false, camStream = null, camVideo = null, camError = false, camReason = '';
+
+const CAM_FRAME_MAX_MS = 1500, CAM_RECOVERY_GAP_MS = 10000;
+let camGeneration = 0, camStarting = false, camFrame = null, camFrameTimer = null, camRecoveryAt = -Infinity;
+function cameraClock_() { return typeof performance !== 'undefined' ? performance.now() : Date.now(); }
+function cameraFrameFresh_(forCapture) {
+  try {
+    const f = camFrame, v = camVideo;
+    if (!cameraOn || !f || !f.supported || f.generation !== camGeneration || f.video !== v || f.stream !== camStream ||
+        !v || v.paused || v.ended || v.readyState < 2 || !v.videoWidth || !f.serial) return false;
+    const track = camStream.getVideoTracks()[0], age = cameraClock_() - f.at;
+    return !!track && track.readyState === 'live' && !track.muted && age >= 0 && age <= CAM_FRAME_MAX_MS &&
+      (!forCapture || f.serial !== f.captured);
+  } catch (e) { return false; }
+}
+function monitorCameraFrames_(video, stream, generation) {
+  if (camFrame && camFrame.id !== null && camFrame.video.cancelVideoFrameCallback) camFrame.video.cancelVideoFrameCallback(camFrame.id);
+  if (camFrameTimer !== null) { clearInterval(camFrameTimer); camFrameTimer = null; }
+  const f = { video: video, stream: stream, generation: generation, serial: 0, captured: 0, at: -Infinity,
+    startedAt: cameraClock_(), observedAt: cameraClock_(), presented: -1, media: -1, id: null, supported: false };
+  camFrame = f;
+  const current = function () { return cameraOn && generation === camGeneration && camFrame === f && camVideo === video && camStream === stream; };
+  const note = function (frames, media, displayedAt) {
+    if (!current()) return;
+    const now = cameraClock_(), gap = now - f.observedAt; f.observedAt = now;
+    const advanced = (Number.isFinite(frames) && frames > f.presented) || (Number.isFinite(media) && media > f.media);
+    if (!advanced) return;
+    if (Number.isFinite(frames)) f.presented = frames;
+    if (Number.isFinite(media)) f.media = media;
+    if (gap < 0 || gap > CAM_FRAME_MAX_MS || (Number.isFinite(displayedAt) && now - displayedAt > CAM_FRAME_MAX_MS)) { f.at = -Infinity; return; }
+    f.serial++; f.at = now;
+    if (camError && cameraFrameFresh_()) { camError = false; camReason = ''; updateStatusBar(); }
+  };
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    f.supported = true;
+    const next = function () {
+      if (!current()) return;
+      f.id = video.requestVideoFrameCallback(function (_, metadata) {
+        note(metadata.presentedFrames, metadata.mediaTime, metadata.expectedDisplayTime); next();
+      });
+    };
+    next();
+  } else if (typeof video.getVideoPlaybackQuality === 'function') {
+    try { f.presented = video.getVideoPlaybackQuality().totalVideoFrames; f.supported = Number.isFinite(f.presented); } catch (e) {}
+    if (f.supported) camFrameTimer = setInterval(function () {
+      if (!current()) return;
+      try { note(video.getVideoPlaybackQuality().totalVideoFrames, NaN); } catch (e) {}
+    }, 250);
+  }
+}
+function recoverCamera_() {
+  if (!cameraOn || camStarting || cameraFrameFresh_() || (camFrame && !camFrame.supported)) return;
+  const now = cameraClock_();
+  if ((camFrame && !camFrame.serial && now - camFrame.startedAt < CAM_FRAME_MAX_MS) || now - camRecoveryAt < CAM_RECOVERY_GAP_MS) return;
+  camRecoveryAt = now;
+  stopCamera(true);
+  if (cameraOn) startCamera(); // Recovery never changes the configured camera setting or waits in the punch flow.
+}
+function cameraNoPhoto_() {
+  camError = true;
+  camReason = camFrame && !camFrame.supported ? 'This browser cannot verify a fresh camera frame. No photo taken; attendance still works.'
+    : 'A fresh camera image was not available. No photo taken; attendance still works.';
+  updateStatusBar(); recoverCamera_();
+}
+
 /** CAMDIAG: plain-language reason why the camera cannot be used (shown on the kiosk + in setup). */
 function cameraReason(e) {
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1598,7 +1662,7 @@ function cameraStatusText() {
   const setting = lsGet('kiosk_serverCamera', 'OFF');
   return 'Camera — setting from Admin: ' + setting + ' · page address: ' + location.protocol + '//' +
     ' · secure page: ' + (window.isSecureContext ? 'yes' : 'NO') + ' · camera API: ' + (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'yes' : 'NO') +
-    ' · status: ' + (setting !== 'ON' ? 'off' : camVideo && camVideo.videoWidth ? 'working (' + camVideo.videoWidth + '×' + camVideo.videoHeight + ')' : camError ? 'NOT AVAILABLE — ' + camReason : 'starting…');
+    ' · status: ' + (setting !== 'ON' ? 'off' : cameraFrameFresh_() ? 'working (' + camVideo.videoWidth + '×' + camVideo.videoHeight + ')' : camError ? 'NOT AVAILABLE — ' + camReason : 'starting…');
 }
 async function retryCamera() { stopCamera(); camError = false; camReason = ''; if (cameraOn) await startCamera(); $('setupCamera').textContent = cameraStatusText(); }
 function applyServerCamera(v) {
@@ -1606,22 +1670,38 @@ function applyServerCamera(v) {
   lsSet('kiosk_serverCamera', v);
   if (v === 'ON' && !cameraOn) { cameraOn = true; startCamera(); }
   else if (v === 'OFF' && cameraOn) { cameraOn = false; stopCamera(); }
+  else if (v === 'ON' && cameraOn) recoverCamera_();
   updateStatusBar();
 }
 async function startCamera() {
-  camError = false;
+  if (!cameraOn || camStarting || cameraFrameFresh_()) return;
+  if (camVideo || camStream) stopCamera(true);
+  const generation = ++camGeneration;
+  camStarting = true;
+  let stream = null, video = null;
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
-    camVideo = document.createElement('video');
-    camVideo.muted = true; camVideo.playsInline = true; camVideo.setAttribute('playsinline', '');
-    camVideo.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
-    document.body.appendChild(camVideo);
-    camVideo.srcObject = camStream; await camVideo.play();
-  } catch (e) { camError = true; camReason = cameraReason(e); stopCamera(true); }
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+    if (!cameraOn || generation !== camGeneration) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+    video = document.createElement('video');
+    video.muted = true; video.playsInline = true; video.setAttribute('playsinline', '');
+    video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-10px;top:-10px';
+    document.body.appendChild(video);
+    camStream = stream; camVideo = video; video.srcObject = stream;
+    monitorCameraFrames_(video, stream, generation);
+    await video.play();
+    if (!cameraOn || generation !== camGeneration) { stream.getTracks().forEach(function (t) { t.stop(); }); video.remove(); }
+  } catch (e) {
+    if (generation === camGeneration) { camError = true; camReason = cameraReason(e); stopCamera(true); }
+    else { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); if (video) video.remove(); }
+  } finally { if (generation === camGeneration) camStarting = false; }
   updateStatusBar();
 }
 function stopCamera(keepError) {
+  camGeneration++; camStarting = false;
+  if (camFrame && camFrame.id !== null && camFrame.video.cancelVideoFrameCallback) camFrame.video.cancelVideoFrameCallback(camFrame.id);
+  if (camFrameTimer !== null) { clearInterval(camFrameTimer); camFrameTimer = null; }
+  camFrame = null;
   hideCamPreview(); // CAMPV
   if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
   if (camVideo) camVideo.remove();
@@ -1630,14 +1710,18 @@ function stopCamera(keepError) {
 /** One 160×120 frame as base64 JPEG (no prefix), or null. Never throws. */
 function capturePhoto() {
   try {
-    if (!cameraOn || !camVideo || !camVideo.videoWidth) return null;
+    if (!cameraOn) return null;
+    if (!cameraFrameFresh_(true)) { cameraNoPhoto_(); return null; }
+    const frame = camFrame;
     const cv = document.createElement('canvas'); cv.width = 160; cv.height = 120;
     const vw = camVideo.videoWidth, vh = camVideo.videoHeight, want = 4 / 3;
     let sw = vw, sh = vh; if (vw / vh > want) sw = vh * want; else sh = vw / want; // centre crop to 4:3
     cv.getContext('2d').drawImage(camVideo, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, 160, 120);
     let url = cv.toDataURL('image/jpeg', 0.6);
     if (url.length > 26000) url = cv.toDataURL('image/jpeg', 0.4);
-    return url.length > 26000 ? null : url.split(',')[1];
+    if (url.length > 26000) return null;
+    frame.captured = frame.serial;
+    return url.split(',')[1];
   } catch (e) { return null; }
 }
 function queuePhoto(image, rawId, localId, originalConfig) {
