@@ -392,6 +392,7 @@
       <div class="display" id="displayEmpId"></div>
       <div class="keypad" id="keypadEmpId"></div>
       <div class="msg err" id="msgEmpId"></div>
+      <button type="button" id="pinTryAgain" class="hidden" onclick="retryPinEntry()">Try Again</button>
       <div class="cancel"><button onclick="resetKiosk()">Cancel</button></div>
     </div>
     <div id="screenPin" class="hidden">
@@ -688,6 +689,7 @@ function resetKiosk() {
   KIOSK_FLOW++; mode = null; employeeId = ''; pin = ''; busy = false;
   breakPin = ''; noInPin = ''; clearInterval(brkTick);
   $('flow').classList.add('hidden');
+  $('pinTryAgain').classList.add('hidden');
   hideCamPreview(); // CAMPV
   if (typeof scheduleNext === 'function' && slideItems.length > 1) { slidePauseUntil = Date.now() + 3000; scheduleNext(); }
 }
@@ -780,10 +782,18 @@ async function submitPin() {
   } finally { if (flow === KIOSK_FLOW) { busy = false; pin = ''; } }
 }
 
+function retryPinEntry(code) {
+  const selectedMode = mode;
+  resetKiosk(); startEntry(selectedMode);
+  $('msgEmpId').textContent = code === 'PIN_LOCKED'
+    ? 'Too many incorrect attempts. Please wait until the temporary lock ends or contact your GGM/AGGM.'
+    : 'Employee ID or PIN is incorrect. Please enter your Employee ID and PIN again.';
+  $('pinTryAgain').classList.remove('hidden');
+}
 function handleError(err) {
   const code = err && err.code, msg = (err && err.message) || 'Please try again.';
   speak(code === 'DUPLICATE' ? SAY_OK : SAY_ERR);
-  if (code === 'INVALID_LOGIN') { buildPinPad(); pin = ''; renderPin(); setPinMsg(staffText(msg) + ' Check your Employee ID and PIN.', 'err'); return; }
+  if (code === 'INVALID_LOGIN' || code === 'PIN_LOCKED') { retryPinEntry(code); return; }
   const titles = { ALREADY_IN: 'Already clocked IN', NOT_IN: 'Not clocked IN', DUPLICATE: 'Already recorded', PIN_LOCKED: 'Temporarily locked',
     INACTIVE: 'Account inactive', TERMINAL_INVALID: 'Kiosk not authorized', ON_BREAK: 'You are on break', BREAK_AUTO: 'Break is automatic',
     BREAK_NONE: 'No break to record', NOT_ON_BREAK: 'Not on break', ALREADY_ON_BREAK: 'Already on break' };

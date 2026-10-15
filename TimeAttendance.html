@@ -469,7 +469,17 @@
   <main>
     <!-- ================= CLOCK ================= -->
     <!-- ================= DASHBOARD ================= -->
-    <section id="dashboard" class="active">
+    <div class="block no-print" id="pinFixContext" style="display:none">
+        <strong>PIN lockout review</strong><p id="pinFixDetails" class="sub"></p>
+        <p>Check CCTV and existing attendance. A failed PIN attempt does not prove attendance. Enter only the time and type you verify.</p>
+        <div class="actions">
+          <button class="btn btn-secondary" onclick="run(this, viewPinFixCard)">View Time Card</button>
+          <button class="btn btn-primary" onclick="run(this, function () { return completePinFix('CORRECTED'); })">Complete corrected review</button>
+          <button class="btn btn-secondary" onclick="run(this, function () { return completePinFix('NO_CORRECTION'); })">Reviewed — No Correction Needed</button>
+          <button class="btn btn-secondary" onclick="closePinFix()">Cancel review</button>
+        </div>
+      </div>
+      <section id="dashboard" class="active">
       <div class="d-head">
         <div class="d-title">
           <div class="mark"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/><path d="M12 8v4l2.5 1.5"/></svg></div>
@@ -593,7 +603,7 @@
         <p class="sub">For a clock-in or clock-out the employee forgot. Enter the real time it happened (Saipan time). A reason is required.</p>
         <div class="grid three">
           <div><label for="mpDir">Type</label>
-            <select id="mpDir"><option value="OUT">Clock OUT</option><option value="IN">Clock IN</option><option value="BREAK_START">Break start / resume</option><option value="BREAK_PAUSE">Break pause</option><option value="BREAK_END">Break end</option></select></div>
+            <select id="mpDir"><option value="" disabled>Choose punch type</option><option value="OUT" selected>Clock OUT</option><option value="IN">Clock IN</option><option value="BREAK_START">Break start / resume</option><option value="BREAK_PAUSE">Break pause</option><option value="BREAK_END">Break end</option></select></div>
           <div><label for="mpDate">Date</label><input id="mpDate" type="date"></div>
           <div><label for="mpTime">Time</label><input id="mpTime" type="time"></div>
           <div class="full"><label for="mpReason">Reason</label><input id="mpReason" placeholder="e.g. Forgot to clock out; supervisor confirmed left at 1:00 AM"></div>
@@ -1409,6 +1419,7 @@ const SHAPES = {
   setTerminalButtonSound: has('buttonSound'), setTerminalCamera: has('camera'), removeTerminal: has('terminalId', 'status'),
   addMissedPunch: has('rawId'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'),
   addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
+  completePinLockReview: has('employeeId', 'incidentId', 'reviewed'),
   openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
   setupDeptPosMasters: has('departments', 'positions'), addDepartment: has('departments', 'positions'), addPosition: has('departments', 'positions'),
   updateDepartment: has('departments', 'positions'), updatePosition: has('departments', 'positions'), setDepartmentStatus: has('departments', 'positions'),
@@ -1431,7 +1442,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
+const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -1658,6 +1669,7 @@ async function doLogout() {
 let IDLE_MS = 30 * 60 * 1000;
 let lastActivity = Date.now(), lastServerTouch = Date.now(), idleTimer = null;
 function endSession(message) {
+  closePinFix();
   sessionToken = null; SESSION_GEN++; // SESSION GUARD: answers of this session are ignored from now on
   clearInterval(idleTimer); idleTimer = null;
   stopAlertPolling(); clearInterval(dashTimer); clearInterval(dashTick);
@@ -2118,6 +2130,8 @@ function restoreClockEmployee() {
   if (emp) selectClockEmployee(emp);
 }
 function selectClockEmployee(e) {
+  const pinReview = pinFixCurrent_();
+  if (pinReview && pinReview.employeeId !== String(e.employeeId)) closePinFix();
   try { sessionStorage.setItem('admin_clk_emp', e.employeeId); } catch (x) {}
   clockEmp = e;
   document.getElementById('clkSearch').value = '';
@@ -2133,6 +2147,7 @@ function selectClockEmployee(e) {
   refreshRaw();
 }
 function clearClockEmployee() {
+  closePinFix();
   clockEmp = null;
   try { sessionStorage.removeItem('admin_clk_emp'); } catch (e) {}
   document.getElementById('clkSelected').classList.remove('show');
@@ -2150,6 +2165,7 @@ function needEmployee(msgId) {
 }
 
 async function clockAction(action) {
+  if (pinFixCurrent_()) { setMsg('clkMsg', false, 'Use Add a missed punch or Edit Punch with the CCTV-confirmed time.'); return; }
   if (!needEmployee('clkMsg')) return;
   const reason = clkReason.value, note = clkNote.value.trim();
   const result = await call(action, {
@@ -2170,21 +2186,32 @@ async function clockAction(action) {
 
 async function addMissedPunchUI() {
   if (!needEmployee('mpMsg')) return;
+  const pinFix = pinFixForEmployee_(clockEmp.employeeId);
+  if (pinFix && !mpDir.value) { setMsg('mpMsg', false, 'Choose the punch type verified from CCTV.'); return; }
+  if (!verifyPinFix_(pinFix)) return;
   if (!mpDate.value || !mpTime.value) { setMsg('mpMsg', false, 'Enter the date and time it really happened.'); return; }
   if (mpReason.value.trim().length < 3) { setMsg('mpMsg', false, 'Please write a short reason.'); mpReason.focus(); return; }
+  const savedDate = mpDate.value;
+  if (pinFix) { pinFix.corrected = false; pinFix.refreshed = false; }
+  if (pinFix) pinFix.saving = true;
+  try {
   const result = await call('addMissedPunch', {
     employeeId: clockEmp.employeeId, direction: mpDir.value, date: mpDate.value, time: mpTime.value,
     reason: mpReason.value.trim(), venueId: clkVenue.value
   });
   if (result.ok) {
+    rememberPinFixDates_(pinFix, [savedDate]);
     setMsg('mpMsg', true, 'Added missed ' + dirLabel(result.data.direction).toLowerCase() + ' for ' + clockEmp.name + ' at ' + saipanDateTime(result.data.originalTimestamp) + '.');
     speak('Thank you');
     mpReason.value = ''; mpTime.value = '';
     refreshRaw(); checkAlerts(false);
+    if (pinFix) pinFix.saving = false;
+    await pinFixSaved_(pinFix, [savedDate]);
   } else {
     setMsg('mpMsg', false, result.error.message);
     speak('Please try again');
   }
+  } finally { if (pinFix) pinFix.saving = false; }
 }
 
 async function refreshRaw() {
@@ -2371,10 +2398,7 @@ function alertActions(a, small) {
     wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: small ? 'Fix' : 'Fix now', onclick: function () { fixAlert(a); } }));
     return wrap;
   }
-  wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: a.stillLocked ? 'Unlock now' : 'Mark as fixed',
-    onclick: function () { lockAction(this, a, a.stillLocked ? 'unlock' : 'dismiss'); } }));
-  wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Reset PIN', onclick: function () { lockAction(this, a, 'reset'); } }));
-  if (a.stillLocked) wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Dismiss', onclick: function () { lockAction(this, a, 'dismiss'); } }));
+  wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: 'Fix Now', onclick: function () { fixPinLockAlert(a); } }));
   return wrap;
 }
 // MYREC: employee reports from the phone page
@@ -2395,6 +2419,107 @@ async function resolveReport(btn, a) {
     toast('Report resolved.'); checkAlerts(true);
   });
 }
+// Incident context only; attendance changes still use the existing audited forms.
+let PIN_FIX = null, PIN_FIX_SAVING = false;
+function pinFixCurrent_() {
+  return PIN_FIX && PIN_FIX.gen === SESSION_GEN ? PIN_FIX : null;
+}
+function closePinFix() {
+  PIN_FIX = null;
+  document.getElementById('pinFixContext').style.display = 'none';
+}
+function fixPinLockAlert(a) {
+  const emp = EMPLOYEES.find(function (e) { return e.employeeId === String(a.employeeId); });
+  if (!emp || !a.rawId) { toast('Employee or incident not found. Refresh Alerts before reviewing.'); return; }
+  closePinFix(); closeAlertPopup(); showTab('clock'); selectClockEmployee(emp);
+  PIN_FIX = { employeeId: emp.employeeId, incidentId: String(a.rawId), date: saipanDate(new Date(a.time)), gen: SESSION_GEN, corrected: false };
+  mpDir.value = ''; mpDate.value = ''; mpTime.value = ''; mpReason.value = '';
+  if (a.venueId) clkVenue.value = a.venueId;
+  document.getElementById('pinFixDetails').textContent = emp.name + ' (ID ' + emp.employeeId + ') — lockout: ' + a.time + ' — incident ' + a.rawId;
+  document.getElementById('pinFixContext').style.display = '';
+  document.getElementById('missedBlock').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function pinFixForEmployee_(id) {
+  const c = pinFixCurrent_();
+  return c && c.employeeId === String(id) ? c : null;
+}
+function verifyPinFix_(c) {
+  return !c || (pinFixCurrent_() === c && !c.saving && !PIN_FIX_SAVING && confirm('Have you checked CCTV and the existing attendance records? Enter only the punch type and time you verified.'));
+}
+async function viewPinFixCard() {
+  const c = pinFixCurrent_(); if (!c) return false;
+  c.refreshed = false;
+  const emp = EMPLOYEES.find(function (e) { return e.employeeId === c.employeeId; });
+  if (!emp) return false;
+  showTab('reports');
+  if (SERVER_PERIODS && c.date < SERVER_PERIODS.previous.start) {
+    if (tcMode !== 'arch') tcView('arch');
+    const d = ARCH.current;
+    c.refreshed = !!(d && d.found && !d.correction && !ARCH.previewing && d.card && d.card.employeeId === c.employeeId &&
+      d.startDate <= c.date && d.endDate >= c.date && document.getElementById('arEmp').value === c.employeeId &&
+      document.getElementById('arPeriod').value === d.startDate && !document.getElementById('arPrint').disabled);
+    c.archiveVersion = c.refreshed ? d.version : null; c.reportSeq = null;
+    if (!c.refreshed) toast('Open this employee’s archived period. Use Update Archived Card, Preview and Finalize.');
+    return c.refreshed;
+  }
+  tcView('live'); setPeriod(SERVER_PERIODS && c.date < SERVER_PERIODS.current.start ? -1 : 0);
+  reportEmp = emp; document.getElementById('repSearch').value = emp.name + ' (' + emp.employeeId + ')';
+  const seq = await loadReport();
+  c.refreshed = !!(pinFixCurrent_() === c && seq && seq === REPORT_SEQ && !document.getElementById('printBtn').disabled &&
+    !document.getElementById('reportOut').classList.contains('tc-drawing'));
+  c.reportSeq = c.refreshed ? seq : null;
+  if (!c.refreshed) toast('The Time Card refresh was not confirmed. View and verify it before completing the review.');
+  return c.refreshed;
+}
+
+function rememberPinFixDates_(c, dates) {
+  if (!c || pinFixCurrent_() !== c) return;
+  c.pendingDates = c.pendingDates || [];
+  (dates || []).forEach(function (day) {
+    c.date = day;
+    if (SERVER_PERIODS && day < SERVER_PERIODS.previous.start && c.pendingDates.indexOf(day) < 0) c.pendingDates.push(day);
+  });
+  c.corrected = false; c.refreshed = false;
+}
+async function pinFixSaved_(c, dates, finalized) {
+  if (!c || pinFixCurrent_() !== c) return;
+  c.pendingDates = c.pendingDates || [];
+  (dates || []).forEach(function (day) {
+    c.date = day;
+    if (SERVER_PERIODS && day < SERVER_PERIODS.previous.start && c.pendingDates.indexOf(day) < 0) c.pendingDates.push(day);
+  });
+  if (finalized && finalized.employeeId === c.employeeId) {
+    c.pendingDates = c.pendingDates.filter(function (day) { return day < finalized.periodStart || day > finalized.periodEnd; });
+  }
+  c.refreshed = false;
+  if (c.pendingDates.length || (ARCH.current && ARCH.current.correction && ARCH.current.correction.employeeId === c.employeeId)) {
+    c.corrected = false; toast('Preview and Finalize the archived correction before completing this review.'); return;
+  }
+  c.corrected = true;
+  if (await viewPinFixCard()) await completePinFix('CORRECTED');
+}
+
+async function completePinFix(outcome) {
+  const c = pinFixCurrent_();
+  if (!c || PIN_FIX_SAVING || c.saving) return;
+  if (outcome === 'CORRECTED' && (!c.corrected || !c.refreshed || (c.reportSeq && c.reportSeq !== REPORT_SEQ))) { toast('Save and verify the correction first.'); return; }
+  if ((c.pendingDates && c.pendingDates.length) || (ARCH.current && ARCH.current.correction && ARCH.current.correction.employeeId === c.employeeId)) {
+    toast('Finalize or cancel the open archived correction first.'); return;
+  }
+  if (!confirm('Have you verified CCTV and the Time Card outcome? Complete only this lockout incident. This does not create attendance or unlock the employee.')) return;
+  const reason = prompt('Review reason (required):');
+  if (reason === null || reason.trim().length < 5) return;
+  PIN_FIX_SAVING = true;
+  try {
+    const r = await call('completePinLockReview', { employeeId: c.employeeId, incidentId: c.incidentId, outcome: outcome, reason: reason.trim(), verified: true });
+    if (pinFixCurrent_() !== c) return;
+    if (!r.ok || !r.data || r.data.employeeId !== c.employeeId || r.data.incidentId !== c.incidentId || r.data.reviewed !== true) {
+      toast('Review completion was not confirmed. Keep the incident and refresh Alerts.'); return;
+    }
+    closePinFix(); await checkAlerts(true); toast('This lockout incident has been reviewed.');
+  } finally { PIN_FIX_SAVING = false; }
+}
+
 async function lockAction(btn, a, what) {
   let payload = { employeeId: a.employeeId }, action, done;
   if (what === 'reset') {
@@ -2499,6 +2624,7 @@ async function loadReport() {
     saveReportState(result.data);
     if (document.getElementById('tcPhotos').checked) togglePhotoPages('reportOut', true); // PHOTO
   });
+  return seq; // A successful request marker; callers must still check drawing and cancellation.
 }
 // A1: many cards are drawn TC_SLICE at a time so the page stays responsive; Print comes on after the last slice.
 // A newer request (REPORT_SEQ) stops an older run. A short list is drawn at once, exactly as before.
@@ -3803,12 +3929,19 @@ async function previewCorrection() {
   ARCH.previewing = true;
 }
 async function finishCorrection(w) {
+  const pinFix = pinFixForEmployee_(w.employeeId);
   if (!confirm('Save & re-archive?\n\nThe corrected card becomes the new archived version. The current version is kept as "Superseded". This is recorded in the Audit Log.')) return;
+  if (pinFix && pinFix.saving) return;
+  if (pinFix) pinFix.saving = true;
+  try {
   const r = await call('finalizeArchivedCorrection', { employeeId: w.employeeId, periodStart: w.periodStart });
   if (!r.ok) { alert(r.error.message); return; }
   ARCH.previewing = false;
   toast('Re-archived as version ' + r.data.version + '. ' + r.data.change);
   await loadArchiveLists(); await viewArchivedCard();
+  if (pinFix) pinFix.saving = false;
+  await pinFixSaved_(pinFix, [], w);
+  } finally { if (pinFix) pinFix.saving = false; }
 }
 async function cancelCorrection(w) {
   if (!confirm('Close the correction window without re-archiving?\n\n(Any punches you already changed stay changed and are in the Audit Log; the archived card keeps its current version.)')) return;
@@ -4404,18 +4537,37 @@ async function saveTcEdit() {
   if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
   if (reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for the correction.'); teReason.focus(); return; }
   if (!confirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason)) return;
+  const pinFix = pinFixForEmployee_(TE.c.employeeId);
+  if (!verifyPinFix_(pinFix)) return;
+  if (pinFix) { pinFix.corrected = false; pinFix.refreshed = false; }
+  if (pinFix) pinFix.saving = true;
+  try {
   const errs = [];
+  const savedDates = [];
   for (const x of changes) {
     let r;
     if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason });
     else if (x.kind === 'remove') r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
     else r = await call('addMissedPunch', { employeeId: TE.c.employeeId, direction: x.dir, date: x.date, time: x.time, reason: reason, venueId: x.venueId });
     if (!r.ok) errs.push(x.text + ': ' + r.error.message);
+    else {
+      if (x.it) savedDates.push(x.it.orig.date);
+      if (x.date) savedDates.push(x.date);
+      rememberPinFixDates_(pinFix, savedDates);
+    }
   }
   if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n'));
   else closeDlg('tcEditDlg');
   toast(errs.length ? (changes.length - errs.length) + ' of ' + changes.length + ' saved.' : 'Corrections saved.');
   if (tcMode === 'arch' && ARCH.previewing) await previewCorrection(); else await loadReport(); // refresh the time card right away
+  if (pinFix) pinFix.saving = false;
+  if (pinFix && savedDates.length) {
+    if (!errs.length) await pinFixSaved_(pinFix, savedDates);
+    else {
+      pinFix.pendingDates = (pinFix.pendingDates || []).concat(savedDates.filter(function (day) { return SERVER_PERIODS && day < SERVER_PERIODS.previous.start; }));
+    }
+  }
+  } finally { if (pinFix) pinFix.saving = false; }
 }
 
 // ---- kiosk announcements / policy ----
