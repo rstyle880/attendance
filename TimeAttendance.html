@@ -1420,7 +1420,7 @@ const SHAPES = {
   createEmployee: has('employeeId', 'name'), updateEmployee: has('employeeId'), archiveEmployee: has('employeeId'), unarchiveEmployee: has('employeeId'),
   unlockEmployeePin: has('unlocked'), createVenue: has('venueId'), registerTerminal: has('terminalId', 'secret'),
   setTerminalButtonSound: has('buttonSound'), setTerminalCamera: has('camera'), removeTerminal: has('terminalId', 'status'),
-  addMissedPunch: has('rawId'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'),
+  addMissedPunch: has('rawId'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'), setDoubleShiftBreak: has('inRawId', 'approved', 'adjustmentId'),
   addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
   completePinLockReview: has('employeeId', 'incidentId', 'reviewed'),
   openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
@@ -1445,7 +1445,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
+const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -2808,6 +2808,13 @@ function renderTimecard(c, startDate, endDate) {
               onclick: function () { toggleWaiver(this, r); } })
           ]));
         }
+        if (r.doubleShiftAdjustmentId || (r.canWaive && !r.breakWaived && r.breakMinutes === 30 && r.timeIn && r.timeOut && !r.flag && r.grossHours >= 1 && /^Break 30 min(;|$)/.test(r.breakNote || ''))) {
+          noteCell.appendChild(el('div', { className: 'no-print', style: 'margin-top:4px' }, [
+            el('button', { className: 'btn btn-secondary btn-sm tc-double-break',
+              text: r.doubleShiftAdjustmentId ? 'Cancel double-shift break approval…' : 'Approve Double-Shift Break — 60 minutes…',
+              onclick: function () { toggleDoubleShiftBreak(this, r); } })
+          ]));
+        }
         const tr = addRow(tbody, [
           i === 0 ? dayLabel : '', inTxt, outTxt, venueShort(r.venueId) + (moved ? ' → ' + venueShort(r.outVenueId) : ''),
           r.flag ? '' : hm(r.hours), r.flag ? '' : hm(r.regular), r.flag ? '' : hm(r.overtime), noteCell
@@ -2859,7 +2866,7 @@ function renderTimecard(c, startDate, endDate) {
   return card;
 }
 // Correction log for one time card (from the AuditLog)
-const CORR_LABEL = { INSERTED: 'Inserted', VOIDED: 'Removed', EDITED: 'Changed', BY_ADMIN: 'Punched by admin', BREAK_WAIVED: 'Break: no break taken', BREAK_WAIVER_UNDONE: 'Break: undo no break taken',
+const CORR_LABEL = { INSERTED: 'Inserted', VOIDED: 'Removed', EDITED: 'Changed', BY_ADMIN: 'Punched by admin', BREAK_WAIVED: 'Break: no break taken', BREAK_WAIVER_UNDONE: 'Break: undo no break taken', DOUBLE_SHIFT_BREAK_APPROVAL_RECORDED: 'Break: 60-minute approval recorded (check adjustment status)', DOUBLE_SHIFT_BREAK_CANCEL_REQUESTED: 'Break: cancellation requested (check adjustment status)', DOUBLE_SHIFT_BREAK_APPROVED: 'Break: approved double shift (60 min)', DOUBLE_SHIFT_BREAK_CANCELLED: 'Break: double-shift approval cancelled',
   PAID_ADDED: 'Paid hours added', PAID_VOIDED: 'Paid hours voided' };
 const PAID_LABEL = { HOLIDAY: 'Holiday', SICK: 'Sick', VACATION: 'Vacation', OTHER: 'Other', UNPAID: 'Unpaid leave' };
 
@@ -3071,6 +3078,19 @@ function renderCorrections(list, history) {
 }
 function shortDate(dateStr) {
   return dtf_('en-US', { timeZone: TZ, month: 'numeric', day: 'numeric' }).format(new Date(dateStr + 'T12:00:00+10:00'));
+}
+async function toggleDoubleShiftBreak(btn, r) {
+  const gen = SESSION_GEN, approving = !r.doubleShiftAdjustmentId;
+  const reason = prompt(approving ? 'Approve a 60-minute break deduction for this shift ONLY.\nConfirm that TWO actual 30-minute breaks were taken.\n\nRequired Admin reason:' : 'Cancel this double-shift break approval?\nThe original break policy will apply again.\n\nRequired Admin reason:');
+  if (reason === null) return;
+  if (reason.trim().length < 5 || reason.length > 500) { alert('Enter a reason (5–500 characters).'); return; }
+  if (!confirm(approving ? 'I confirm that this employee actually took TWO 30-minute breaks on this approved double shift.\nDeduct 60 minutes total, for this IN/OUT pair only?' : 'Cancel this approval and restore the original break deduction?')) return;
+  if (gen !== SESSION_GEN || !sessionToken) return;
+  await run(btn, async function () {
+    const res = await call('setDoubleShiftBreak', { inRawId: r.inRawId, outRawId: r.outRawId, expectedInTime: r.timeIn, expectedOutTime: r.timeOut,
+      approved: approving, adjustmentId: r.doubleShiftAdjustmentId || '', twoBreaksTaken: approving, confirm: true, reason: reason.trim() });
+    if (res.ok) await afterCardChange(); else setMsg(ARCH.previewing ? 'arMsg' : 'repMsg', false, res.error.message);
+  });
 }
 async function toggleWaiver(btn, r) {
   let reason = '';
