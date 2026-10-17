@@ -2743,7 +2743,7 @@ function renderTimecard(c, startDate, endDate) {
   (c.paid || []).forEach(function (p) { (paidByDay[p.date] = paidByDay[p.date] || []).push(p); });
   const paidNote = function (day) {
     return (paidByDay[day] || []).map(function (p) {
-      return PAID_LABEL[p.type] + ' ' + hm(p.minutes / 60) + (p.type === 'UNPAID' ? ' — not paid' + (p.reason ? ' · ' + p.reason : '') : ' — paid, not worked');
+      return PAID_LABEL[p.type] + ' ' + hm(p.minutes / 60) + (p.type === 'UNPAID' ? ' — not paid' + (p.reason ? ' · ' + p.reason : '') : p.type === 'HOLIDAY' ? ' — Paid Holiday' : ' — paid, not worked');
     }).join('; ');
   };
 
