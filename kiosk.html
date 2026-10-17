@@ -312,6 +312,7 @@
     .brand .logo { height: 12vh; } .fb-sv .name { font-size: 5vw; } .fb-c88 .num { font-size: 11vw; } .fb-c88 .lbl { font-size: 3.4vw; }
   }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+.confirmation-state{font-size:14px;font-weight:900;letter-spacing:.08em;margin:12px 0}.result[data-confirmation] #resultDetail{font-size:clamp(17px,2.1vw,24px);line-height:1.5;white-space:normal}.result[data-confirmation="OFFLINE SAVED"],.result[data-confirmation="ALREADY SAVED"]{border-color:#93c5fd;background:#eff6ff;color:#123f78}.result[data-confirmation="OFFLINE SAVED"] #resultDetail,.result[data-confirmation="ALREADY SAVED"] #resultDetail{color:#123f78}.result[data-confirmation="OFFLINE SAVED"] #resultBtn,.result[data-confirmation="ALREADY SAVED"] #resultBtn{color:#fff;background:#123f78;border-color:#123f78}.result[data-confirmation="OFFLINE SAVED"] .icon,.result[data-confirmation="ALREADY SAVED"] .icon{color:#123f78}.result[data-confirmation] #resultBtn{display:inline-block;min-height:48px;min-width:180px;margin-top:18px;font-weight:800}.result[data-confirmation] #resultTitle{font-size:clamp(25px,3vw,42px);line-height:1.2}
 </style>
 </head>
 <body>
@@ -405,7 +406,7 @@
     <div id="screenResult" class="hidden">
       <div class="result" id="resultBox">
         <div class="icon" id="resultIcon"></div>
-        <div class="title" id="resultTitle"></div>
+        <div id="resultState" class="confirmation-state hidden"></div><div class="title" id="resultTitle"></div>
         <div class="name" id="resultName"></div>
         <div class="detail" id="resultDetail"></div>
         <button class="btn-ghost hidden" id="resultBtn" onclick="resetKiosk()">OK</button>
@@ -618,8 +619,8 @@ function playAlarm() {
 class NetworkError extends Error {}
 // RESPCHECK: what a real success answer contains, per action. Anything else (e.g. Google sending back the
 // health-check answer) is handled like a lost answer — never shown as a completed punch.
-const ANSWER_OK = { clockIn: function (d) { return !!d.rawId; }, clockOut: function (d) { return !!d.rawId; }, syncOfflinePunch: function (d) { return !!d.rawId; },
-  uploadPunchPhoto: function (d) { return !!d.rawId; }, kioskBreakAction: function (d) { return !!(d.direction || d.needChoice); },
+const ANSWER_OK = { clockIn: function (d) { return !!d.rawId || (d.intentVersion === 1 && d.alreadyCurrent === true && !!(d.punch && d.punch.rawId)); }, clockOut: function (d) { return !!d.rawId || (d.intentVersion === 1 && d.alreadyCurrent === true && !!(d.punch && d.punch.rawId)); }, syncOfflinePunch: function (d) { return !!d.rawId || (d.intentVersion === 1 && d.alreadyCurrent === true && !!(d.punch && d.punch.rawId)); },
+  uploadPunchPhoto: function (d) { return !!d.rawId; }, kioskBreakAction: function (d) { return !!(d.direction || d.needChoice || (d.intentVersion === 1 && d.alreadyCurrent === true && d.punch && d.punch.rawId)); },
   kioskBreakStatus: function (d) { return Array.isArray(d.options); }, kioskMyRecords: function (d) { return Array.isArray(d.rows); },
   kioskHome: function (d) { return !!d.terminalId; }, kioskPing: function (d) { return !!d.terminalId; },
   kioskOnBreak: function (d) { return Array.isArray(d.items); }, kioskContent: function (d) { return Array.isArray(d); } };
@@ -656,6 +657,285 @@ async function api(action, payload, timeoutMs, fixedUrl) {
 // ============================================================================
 let mode = null;            // 'IN' | 'OUT' | 'BREAK' | 'RECORDS'
 let employeeId = '', pin = '', busy = false, idleTimer = null, resultTimer = null;
+
+/* Private attendance intent metadata. No credentials or image data belong here. */
+const KioskIntentStore=(function(){
+  'use strict';
+  const DB='v1_punch_intents', DEADLINE=1500, TTL=120000, MAX=2000;
+  const pending=new Set(['RESERVED','IN_FLIGHT','UNCERTAIN','LOCAL_QUEUED']);
+  const statuses=new Set([...pending,'SERVER_CONFIRMED','REFUSED','CHOICE','RECONCILED']);
+  let opening;
+  function makeId(){if(!globalThis.crypto||!crypto.getRandomValues)throw new Error('Secure intent identity unavailable');if(crypto.randomUUID)return crypto.randomUUID();const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
+  function ready(){
+    if(opening)return opening;
+    opening=new Promise((resolve,reject)=>{
+      let done=false,q;const timer=setTimeout(()=>finish(new Error('Intent storage deadline')),DEADLINE);
+      function finish(error,db){if(done){if(db)db.close();return;}done=true;clearTimeout(timer);if(error)reject(error);else resolve(db);}
+      try{makeId();q=indexedDB.open(DB,1);q.onupgradeneeded=()=>{const d=q.result;d.createObjectStore('events',{keyPath:'id'});d.createObjectStore('scopes',{keyPath:'key'});d.createObjectStore('leases',{keyPath:'key'});};q.onsuccess=()=>{const d=q.result;d.onversionchange=()=>{d.close();opening=undefined;};finish(null,d);};q.onerror=()=>finish(q.error||new Error('Intent storage unavailable'));q.onblocked=()=>finish(new Error('Intent storage blocked'));}catch(e){finish(e);}
+    });opening.catch(()=>{opening=undefined;});return opening;
+  }
+  async function transaction(stores,mode,run){const db=await ready();return new Promise((resolve,reject)=>{
+    let t,done=false,value;const timer=setTimeout(()=>{if(done)return;try{t.abort();}catch(_){}finish(new Error('Intent transaction deadline'));},DEADLINE);
+    function finish(e){if(done)return;done=true;clearTimeout(timer);e?reject(e):resolve(value);}
+    try{t=db.transaction(stores,mode);t.oncomplete=()=>finish();t.onabort=()=>finish(t.error||new Error('Intent transaction aborted'));t.onerror=()=>{};run(t,v=>{value=v;},e=>{try{t.abort();}catch(_){}finish(e);});}catch(e){finish(e);}
+  });}
+  function str(v,max,label){if(typeof v!=='string'||!v||v.length>max)throw new Error('Invalid '+label);return v;}
+  function owner(o){return {url:str(o&&o.url,2048,'endpoint'),terminalId:str(o&&o.terminalId,160,'terminal')};}
+  function key(o,e){return JSON.stringify([o.url,o.terminalId,e]);}
+  function get(id){return transaction(['events'],'readonly',(t,set)=>{const q=t.objectStore('events').get(id);q.onsuccess=()=>set(q.result||null);});}
+  function head(o,e){o=owner(o);return transaction(['scopes','events'],'readonly',(t,set)=>{const q=t.objectStore('scopes').get(key(o,e));q.onsuccess=()=>{if(!q.result){set(null);return;}const r=t.objectStore('events').get(q.result.id);r.onsuccess=()=>set(r.result||null);};});}
+  function list(o){o=owner(o);return transaction(['events'],'readonly',(t,set)=>{const q=t.objectStore('events').getAll();q.onsuccess=()=>set(q.result.filter(e=>e.url===o.url&&e.terminalId===o.terminalId));});}
+  function reserve(input){
+    let o,eid,at;try{o=owner(input.owner);eid=str(input.employeeId,160,'employee');if(!['IN','OUT','BREAK'].includes(input.action)||!['AUTO','START','END','PAUSE','RESUME'].includes(input.op))throw new Error('Invalid action');at=str(input.at,40,'time');if(!Number.isFinite(Date.parse(at)))throw new Error('Invalid time');if(input.anchorLocalId!==undefined)str(input.anchorLocalId,80,'anchor');}catch(e){return Promise.reject(e);}
+    return transaction(['events','scopes'],'readwrite',(t,set,fail)=>{
+      const events=t.objectStore('events'),scopes=t.objectStore('scopes'),k=key(o,eid),q=scopes.get(k);
+      q.onsuccess=()=>{const prior=q.result?events.get(q.result.id):null;
+        const proceed=old=>{
+          const equivalent=old&&old.action===input.action&&(pending.has(old.status)||(old.status==='SERVER_CONFIRMED'&&(input.action!=='BREAK'||(input.op!=='AUTO'&&old.op===input.op))));
+          if(equivalent&&(!input.forceNew||(input.replaceId!==undefined&&old.id!==input.replaceId))){set({event:old,reused:true});return;}
+          room(t,1,()=>{
+            const now=new Date().toISOString(),event={id:makeId(),...o,employeeId:eid,action:input.action,op:input.op,at,status:'RESERVED',createdAt:now,updatedAt:now};
+            if(old)event.previousId=old.id;if(input.anchorLocalId!==undefined)event.anchorLocalId=input.anchorLocalId;
+            events.add(event);scopes.put({key:k,id:event.id});set({event,reused:false});},fail);};
+        if(prior)prior.onsuccess=()=>proceed(prior.result);else proceed(null);
+      };
+    });
+  }
+  // Only superseded completed records may be removed. Current heads and all pending evidence survive.
+  function room(t,additional,next,fail){const e=t.objectStore('events'),sq=t.objectStore('scopes').getAll();sq.onsuccess=()=>{const heads=new Set(sq.result.map(s=>s.id)),q=e.getAll();q.onsuccess=()=>{let count=q.result.length;const candidates=q.result.filter(x=>!heads.has(x.id)&&['SERVER_CONFIRMED','REFUSED','CHOICE','RECONCILED'].includes(x.status)).sort((a,b)=>String(a.updatedAt||a.createdAt).localeCompare(String(b.updatedAt||b.createdAt)));while(count+additional>MAX&&candidates.length){e.delete(candidates.shift().id);count--;}if(count+additional>MAX){fail(new Error('Intent journal capacity reached; review required'));return;}next();};};}
+  function importQueued(bound,items){let o,eligible;try{o=owner(bound);eligible=(Array.isArray(items)?items:[]).filter(x=>x&&x.url===o.url&&x.terminalId===o.terminalId&&['IN','OUT'].includes(x.direction)&&(x.pinSealed||x.pin)&&typeof x.localId==='string'&&x.localId.length>0&&x.localId.length<=80&&typeof x.employeeId==='string'&&x.employeeId.length>0&&x.employeeId.length<=160&&typeof x.originalTimestamp==='string'&&Number.isFinite(Date.parse(x.originalTimestamp)));}catch(e){return Promise.reject(e);}
+    return transaction(['events','scopes'],'readwrite',(t,set,fail)=>{const e=t.objectStore('events'),scopes=t.objectStore('scopes'),all=e.getAll();all.onsuccess=()=>{const known=new Map(all.result.map(x=>[x.id,x])),fresh=new Map();for(const x of eligible){if(known.has(x.localId)){const old=known.get(x.localId);if(old.url!==o.url||old.terminalId!==o.terminalId||old.employeeId!==x.employeeId||old.action!==x.direction){fail(new Error('Queued identity conflict'));return;}continue;}const now=new Date().toISOString();const record={id:x.localId,...o,employeeId:x.employeeId,action:x.direction,op:'AUTO',at:x.originalTimestamp,status:'LOCAL_QUEUED',createdAt:now,updatedAt:now};if(fresh.has(record.id)&&JSON.stringify(fresh.get(record.id))!==JSON.stringify(record)){fail(new Error('Queued identity conflict'));return;}fresh.set(record.id,record);}
+      room(t,fresh.size,()=>{const byEmployee=new Map();for(const event of fresh.values()){e.add(event);const current=byEmployee.get(event.employeeId);if(!current||Date.parse(event.at)>Date.parse(current.at))byEmployee.set(event.employeeId,event);}for(const [eid,event] of byEmployee){const k=key(o,eid),q=scopes.get(k);q.onsuccess=()=>{const existing=q.result&&known.get(q.result.id);if(!existing||Date.parse(event.at)>Date.parse(existing.at))scopes.put({key:k,id:event.id});};}set({imported:fresh.size});},fail);
+    };});
+  }
+  function update(id,patch){return transaction(['events'],'readwrite',(t,set,fail)=>{const s=t.objectStore('events'),q=s.get(id);q.onsuccess=()=>{const e=q.result;if(!e){fail(new Error('Intent missing'));return;}
+    try{if(patch.status!==undefined){if(!statuses.has(patch.status))throw new Error('Invalid status');e.status=patch.status;}if(patch.anchorLocalId!==undefined)e.anchorLocalId=str(patch.anchorLocalId,80,'anchor');if(patch.reasonCode!==undefined)e.reasonCode=str(patch.reasonCode,80,'reason');
+      if(patch.receipt!==undefined){const r={};for(const f of ['localId','originalLocalId','rawId','direction','at','time','terminalId'])if(patch.receipt[f]!==undefined)r[f]=str(patch.receipt[f],160,'receipt '+f);e.receipt=r;}
+      e.updatedAt=new Date().toISOString();s.put(e);set(e);
+    }catch(err){fail(err);}
+  };});}
+  async function withLease(k,callback){
+    k='send:'+str(k,4096,'lease');
+    if(!navigator.locks||!navigator.locks.request)return {acquired:false};
+    return navigator.locks.request(DB+':'+k,{mode:'exclusive',ifAvailable:true},async lock=>lock?{acquired:true,value:await callback()}:{acquired:false});
+  }  function sync(callback){const v=callback();if(v&&typeof v.then==='function')throw new Error('Data callback must be synchronous');return v;}
+  async function withData(callback){
+    if(navigator.locks&&navigator.locks.request)return navigator.locks.request(DB+':data',{mode:'exclusive',ifAvailable:true},lock=>{if(!lock)throw new Error('Intent data coordinator busy');return sync(callback);});
+    // Execute the synchronous mutation inside the serial IDB lease transaction.
+    return transaction(['leases'],'readwrite',(t,set,fail)=>{const s=t.objectStore('leases'),q=s.get('data');q.onsuccess=()=>{if(q.result&&q.result.expires>Date.now()){fail(new Error('Intent data coordinator busy'));return;}try{s.put({key:'data',token:makeId(),expires:Date.now()+TTL});const value=sync(callback);s.delete('data');set(value);}catch(e){fail(e);}};});
+  }
+  return Object.freeze({ready:()=>ready().then(()=>undefined),reserve,importQueued,update,get,head,list,withLease,withData});
+})();
+
+
+/* Durable attempt coordinator. Attendance proofs remain backend receipts / complete offline queue records. */
+const KioskSubmission = (function () {
+  'use strict';
+  let capability = '';
+  const ownerKey = c => JSON.stringify([c.url, c.terminalId]);
+  const owned = (e,c) => e && e.url === c.url && e.terminalId === c.terminalId;
+  const direction = (e,p) => e.action === 'BREAK' ? (p && p.direction) : e.action;
+  const label = (e,p) => e.action !== 'BREAK' ? 'CLOCK ' + e.action :
+    'BREAK ' + (p && p.direction === 'BREAK_END' ? 'END' : p && p.direction === 'BREAK_PAUSE' ? 'PAUSE' : e.op === 'END' ? 'END' : e.op === 'PAUSE' ? 'PAUSE' : e.op === 'RESUME' ? 'RESUME' : 'START');
+  function visible(ctx) { const c=getConfig(); return ctx.flow === KIOSK_FLOW && ctx.emp === employeeId && ctx.mode === mode && ownerKey(c) === ownerKey(ctx.c); }
+  function render(ctx,e,state,p) {
+    if (!visible(ctx)) return;
+    const title=label(e,p), at=p && p.originalTimestamp || e.at;
+    const saved=state==='OFFLINE' || state==='ALREADY_LOCAL';
+    const status=state==='ONLINE'?'ONLINE SUCCESSFUL':state==='OFFLINE'?'OFFLINE SAVED':state.indexOf('ALREADY')===0?'ALREADY SAVED':'NOT CONFIRMED';
+    let detail;
+    if(state==='ONLINE'||state==='ALREADY_SERVER') detail='Server confirmed. '+fmtTime(at)+'. You do not need to '+title.toLowerCase()+' again.';
+    else if(saved) detail=fmtTime(at)+' — Locally recorded time. Your attendance was saved on this kiosk. It will be sent automatically when the internet connection returns. Waiting for server validation. DO NOT '+title+' AGAIN.';
+    else detail=fmtTime(at)+' — Attempted time, not a confirmed punch. We could not verify that this attendance was recorded or safely saved. Please contact your GGM/AGGM with this time. Do not make another attempt until its status is checked.';
+    const heading=title+(state==='ONLINE'?' CONFIRMED':state==='OFFLINE'?' SAVED':state.indexOf('ALREADY')===0?' ALREADY SAVED':' NOT CONFIRMED');
+    showResult(state==='ONLINE'?'in':saved?'offline':state==='ALREADY_SERVER'?'in':'error',state==='UNKNOWN'?'!':'✓',heading,'',detail,false);
+    $('resultBox').dataset.confirmation=status;
+    $('resultState').textContent=status; $('resultState').classList.remove('hidden');
+    $('resultBtn').textContent='Next employee'; $('resultBtn').classList.remove('hidden');
+    clearTimeout(resultTimer); resultTimer=setTimeout(resetKiosk,state==='ONLINE'?3500:state==='UNKNOWN'?10000:8000);
+    speak(state==='UNKNOWN'?'Please contact your G G M or A G G M':saved?'Saved on this kiosk. Do not '+title.toLowerCase()+' again.':SAY_OK);
+  }
+  async function update(id,patch) { return KioskIntentStore.update(id,patch); }
+  function completeQueued(e) {
+    const q=loadList(LS.queue); if(!q.ok)return null;
+    return q.list.find(x=>x.localId===e.id&&x.employeeId===e.employeeId&&x.direction===e.action&&owned(x,e)&&typeof x.pinSealed==='string'&&x.pinSealed.length>0&&!x.refused)||null;
+  }
+  async function queuedPinMatches(q,pinValue) {
+    if(!q)return false;
+    const opened=await within(pinVault.open(q.pinSealed),VAULT_WAIT_MS);
+    return typeof opened==='string' && opened!=='TIMEOUT' && opened===pinValue;
+  }
+  function receipt(e,p) {
+    if (!p || p.voidFlag === true || !p.ack || p.employeeId!==e.employeeId || p.terminalId!==e.terminalId) return false;
+    if(e.action==='BREAK') {
+      const expect={START:'BREAK_START',RESUME:'BREAK_START',PAUSE:'BREAK_PAUSE',END:'BREAK_END'}[e.op];
+      if(expect ? p.direction!==expect : !['BREAK_START','BREAK_PAUSE','BREAK_END'].includes(p.direction))return false;
+    } else if(p.direction!==e.action)return false;
+    return punchAckMatches({localId:e.id,employeeId:e.employeeId,terminalId:e.terminalId},p.direction,{ok:true,data:p});
+  }
+  async function remember(e,p) {
+    await update(e.id,{status:'SERVER_CONFIRMED',receipt:{localId:p.ack.localId,rawId:p.rawId,direction:p.direction,at:p.originalTimestamp,terminalId:p.terminalId}});
+  }
+  async function confirmed(ctx,e,p,already) {
+    if(!receipt(e,p))throw new NetworkError('Unconfirmed receipt');
+    // Backend proof is sufficient even if a later local metadata update is unavailable.
+    try { await remember(e,p); } catch(_) {}
+    if(e.action!=='BREAK') {
+      await KioskIntentStore.withData(()=>editList(LS.queue,q=>dropFrom(q,e.id))).catch(()=>{});
+      if(ctx.photo)await queuePhoto(ctx.photo,p.rawId,e.id,ctx.c).catch(()=>{});
+      await Promise.resolve(linkPhoto(e.id,p.rawId,ctx.c)).catch(()=>{});
+    }
+    render(ctx,e,already?'ALREADY_SERVER':'ONLINE',p);
+    if(e.action==='OUT'||e.action==='BREAK')refreshOnBreak();
+  }
+  async function offline(ctx,e,body) {
+    if(e.action==='BREAK') { await update(e.id,{status:'UNCERTAIN'}).catch(()=>{}); render(ctx,e,'UNKNOWN'); return; }
+    const old=completeQueued(e);
+    if(old && await queuedPinMatches(old,body.pin)) { await update(e.id,{status:'LOCAL_QUEUED'}).catch(()=>{}); render(ctx,e,'ALREADY_LOCAL'); return; }
+    const sealed=await within(pinVault.seal(body.pin),VAULT_WAIT_MS);
+    const good=typeof sealed==='string'&&sealed!=='TIMEOUT';
+    let id='';
+    if(good)try { id=await KioskIntentStore.withData(()=>queueOffline({localId:e.id,employeeId:e.employeeId,at:e.at,pinSealed:sealed,terminalId:e.terminalId,url:e.url,intentVersion:1,anchorLocalId:e.anchorLocalId},e.action)); }catch(_){}
+    if(id && completeQueued(e)) { if(ctx.photo)await queuePhoto(ctx.photo,null,e.id,ctx.c).catch(()=>{});await update(e.id,{status:'LOCAL_QUEUED'}).catch(()=>{}); render(ctx,e,'OFFLINE'); return; }
+    await update(e.id,{status:'UNCERTAIN'}).catch(()=>{});
+    await KioskIntentStore.withData(()=>keepEvidence({localId:e.id,employeeId:e.employeeId,direction:e.action,originalTimestamp:e.at,terminalId:e.terminalId,url:e.url,code:'NOT_SAVED',reason:'The attendance could not be safely confirmed; employee referred to GGM/AGGM'})).catch(()=>{});
+    render(ctx,e,'UNKNOWN');
+  }
+  function subsequentEpisode(e,data) {
+    const s=data&&(e.action==='BREAK'?data.shiftAnchor:data.state);
+    const wanted=e.action==='IN'?'OUT':'IN';
+    if(!s||s.direction!==wanted||!s.rawId||s.localId===e.id)return false;
+    // A matched stored receipt plus a different authoritative latest event avoids
+    // mistaking the kiosk's rounded clock offset for attendance ordering.
+    if(data.found&&receipt(e,data.punch))return s.rawId!==data.punch.rawId;
+    return Date.parse(s.originalTimestamp)>Date.parse(e.at);
+  }
+  async function recover(ctx,e,body) {
+    const q=completeQueued(e);
+    const canonical=e.receipt&&e.receipt.localId&&e.receipt.localId!==e.id;
+    const proofEvent=canonical?{...e,id:e.receipt.localId}:e;
+    if(!navigator.onLine) {
+      render(ctx,e,q&&await queuedPinMatches(q,body.pin)?'ALREADY_LOCAL':'UNKNOWN');return {done:true};
+    }
+    let r;
+    try { r=await api('resolveKioskIntent',{employeeId:e.employeeId,pin:body.pin,terminalId:e.terminalId,terminalSecret:ctx.c.secret,localId:proofEvent.id,intentVersion:1,intentOp:e.action==='BREAK'?e.op:e.action},undefined,e.url); }
+    catch(_) { render(ctx,e,q&&await queuedPinMatches(q,body.pin)?'ALREADY_LOCAL':'UNKNOWN');return {done:true}; }
+    if(!visible(ctx))return {done:true};
+    if(r && !r.ok && r.error && ['INVALID_LOGIN','PIN_LOCKED','INACTIVE','TERMINAL_INVALID','LOCALID_CONFLICT','INTENT_VOIDED'].includes(r.error.code)) { handleError(r.error);return {done:true}; }
+    if(subsequentEpisode(proofEvent,r&&r.data)) return {done:false,anchor:r.data.state&&r.data.state.localId||r.data.shiftAnchor&&r.data.shiftAnchor.localId};
+    if(r&&r.ok&&r.data&&r.data.found&&receipt(proofEvent,r.data.punch)) {
+      if(canonical)render(ctx,e,'ALREADY_SERVER',r.data.punch);else await confirmed(ctx,e,r.data.punch,true);
+      return {done:true};
+    }
+    if(q && await queuedPinMatches(q,body.pin)) { render(ctx,e,'ALREADY_LOCAL');return {done:true}; }
+    // Absence cannot prove an original execution will not commit. BREAK is never replayed.
+    if(e.action==='BREAK') { render(ctx,e,'UNKNOWN');return {done:true}; }
+    return {done:false,requeue:true};
+  }
+  async function execute(ctx,e,reused,extra) {
+    const body={employeeId:e.employeeId,pin:ctx.pin,method:'PIN',terminalId:e.terminalId,terminalSecret:ctx.c.secret,localId:e.id,intentVersion:1,intentOp:e.action==='BREAK'?e.op:e.action,ack:2};
+    if(e.anchorLocalId)body.anchorLocalId=e.anchorLocalId;
+    if(e.action==='BREAK')body.op=e.op;
+    if(extra&&extra.confirmNoIn)body.confirmNoIn=true;
+    // Explicit no-IN confirmation continues a known non-writing OUT response.
+    // It is not an uncertain retry or a new photo/attendance attempt.
+    const resumeChoice=e.action==='OUT'&&e.status==='CHOICE'&&e.reasonCode==='NO_CLOCK_IN_CONFIRM'&&extra&&extra.confirmNoIn===true;
+    if(reused&&!resumeChoice) {
+      const r=await recover(ctx,e,body);
+      if(r.done)return;
+      if(!r.requeue) {
+        const n=await KioskIntentStore.reserve({owner:ctx.c,employeeId:e.employeeId,action:e.action,op:e.op,at:ctx.at,forceNew:true,replaceId:e.id,...(r.anchor?{anchorLocalId:r.anchor}:{})});
+        return run(ctx,n.event,n.reused,extra);
+      }
+      // Recovered IN/OUT without a full queue uses the original ID/time and existing sync path.
+      return offline(ctx,e,body);
+    }
+    if(e.action==='BREAK'&&!supported()) { await update(e.id,{status:'REFUSED',reasonCode:'PROTOCOL_UNAVAILABLE'});render(ctx,e,'UNKNOWN');return; }
+    await update(e.id,{status:'IN_FLIGHT'});
+    // A storage await may outlive the PIN screen. Never capture a later person's frame.
+    if(!visible(ctx)) { await update(e.id,{status:'RESERVED'});return; }
+    if(e.action!=='BREAK'&&!resumeChoice) { ctx.photo=capturePhoto(); if(ctx.photo)await queuePhoto(ctx.photo,null,e.id,ctx.c).catch(()=>{}); }
+    if(!visible(ctx)) { await update(e.id,{status:'RESERVED'});return; }
+    let result;
+    try {
+      result=await api(e.action==='IN'?'clockIn':e.action==='OUT'?'clockOut':'kioskBreakAction',body,undefined,e.url);
+      if(!result||typeof result.ok!=='boolean')throw new NetworkError('Invalid response');
+      if(!result.ok) {
+        const code=result.error&&result.error.code;
+        if(!code||['INTERNAL_ERROR','BUSY'].includes(code))throw new NetworkError('Unconfirmed response');
+        await update(e.id,{status:code==='NO_CLOCK_IN_CONFIRM'?'CHOICE':'REFUSED',reasonCode:code});
+        if(visible(ctx)) { if(code==='NO_CLOCK_IN_CONFIRM'){noInPin=ctx.pin;showNoInConfirm(result.error.message);}else handleError(result.error); }
+        return;
+      }
+      if(e.action==='BREAK'&&result.data&&result.data.needChoice) {
+        await update(e.id,{status:'CHOICE'});if(visible(ctx)){breakPin=ctx.pin;showBreakChoices(result.data);}return;
+      }
+      let p=result.data,canonical=false;
+      if(p&&p.intentVersion===1&&p.alreadyCurrent===true&&p.punch) { p=p.punch;canonical=true; }
+      let proofEvent=e;
+      if(canonical) {
+        if(!p.ack||!p.ack.localId||p.employeeId!==e.employeeId||p.terminalId!==e.terminalId)throw new NetworkError('Invalid canonical receipt');
+        proofEvent={...e,id:p.ack.localId};
+      }
+      if(!receipt(proofEvent,p))throw new NetworkError('Unconfirmed acknowledgment');
+      if(e.action==='BREAK') { if(result.data.intentVersion!==1||!p.ack)throw new NetworkError('Unsupported break acknowledgment'); }
+      else if(!await verifyPunchAck({...body,localId:proofEvent.id},e.action,{ok:true,data:p},ctx.c))throw new NetworkError('Unconfirmed stored row');
+      if(canonical) {
+        await update(e.id,{status:'SERVER_CONFIRMED',receipt:{localId:p.ack.localId,rawId:p.rawId,direction:p.direction,at:p.originalTimestamp,terminalId:p.terminalId}}).catch(()=>{});
+        // The fresh duplicate attempt's photo must never replace evidence on the canonical event.
+        render(ctx,e,'ALREADY_SERVER',p);return;
+      }
+      await confirmed(ctx,e,p,false);
+    } catch(err) {
+      if(!(err instanceof NetworkError))throw err;
+      await offline(ctx,e,body);
+    }
+  }
+  async function run(ctx,e,reused,extra) {
+    const lease=await KioskIntentStore.withLease('attempt:'+e.id,()=>execute(ctx,e,reused,extra));
+    if(!lease.acquired) {
+      const q=completeQueued(e);
+      if(q&&await queuedPinMatches(q,ctx.pin))render(ctx,e,'ALREADY_LOCAL');
+      else render(ctx,e,'UNKNOWN');
+    }
+  }
+  async function submit(action,op,extra) {
+    if(busy)return;
+    if(pin.length!==4 && !(extra&&extra.pinValue)) { setPinMsg('PIN must be 4 digits.','err');return; }
+    const ctx={flow:KIOSK_FLOW,emp:employeeId,mode:mode,c:getConfig(),pin:extra&&extra.pinValue||pin,at:new Date(nowMs()).toISOString()};
+    busy=true;
+    $('keypadPin').classList.add('disabled');$('msgPin').className='msg info';$('msgPin').textContent='Processing…';
+    const fallback={action,op,at:ctx.at};
+    try {
+      await KioskIntentStore.ready();
+      const queued=loadList(LS.queue);if(!queued.ok)throw new Error('Unreadable pending attendance');
+      await KioskIntentStore.importQueued(ctx.c,queued.list);
+      const prior=await KioskIntentStore.head(ctx.c,ctx.emp);
+      const anchor=prior&&prior.action!==action&&(prior.status==='SERVER_CONFIRMED'||prior.status==='LOCAL_QUEUED')?prior.receipt&&prior.receipt.localId||prior.id:null;
+      const resumeChoice=extra&&extra.confirmNoIn===true&&prior&&prior.action==='OUT'&&action==='OUT'&&prior.status==='CHOICE'&&prior.reasonCode==='NO_CLOCK_IN_CONFIRM';
+      const reserved=resumeChoice?{event:prior,reused:true}:await KioskIntentStore.reserve({owner:ctx.c,employeeId:ctx.emp,action,op,at:ctx.at,...(anchor?{anchorLocalId:anchor}:{})});
+      if(!visible(ctx))return;
+      await run(ctx,reserved.event,reserved.reused,extra);
+    } catch(_) { render(ctx,fallback,'UNKNOWN'); }
+    finally { if(ctx.flow===KIOSK_FLOW){busy=false;pin='';if(action==='BREAK'&&op!=='AUTO')breakPin='';} }
+  }
+  function supported(){return capability===ownerKey(getConfig());}
+  function onHome(d,c){if(d&&d.intentVersion===1)capability=ownerKey(c);else capability='';}
+  async function sync(fn) {
+    const lease=await KioskIntentStore.withLease('queue-sync:'+ownerKey(getConfig()),fn);
+    return lease.acquired?lease.value:undefined;
+  }
+  async function syncSaved(item,p,canonical) {
+    try {
+      const e=await KioskIntentStore.get(item.localId);if(!e)return;
+      const proofEvent=canonical&&p&&p.ack?{...e,id:p.ack.localId}:e;
+      if(receipt(proofEvent,p))await remember(e,p);
+    }catch(_){}
+  }
+  async function syncRejected(item,code) { try { const e=await KioskIntentStore.get(item.localId);if(e)await update(e.id,{status:'REFUSED',reasonCode:code||'REFUSED'}); }catch(_){} }
+  return Object.freeze({supported,onHome,submit,confirm:yes=>submit(yes?'OUT':'IN','AUTO',{pinValue:noInPin,confirmNoIn:yes}),breakAction:op=>submit('BREAK',op,{pinValue:breakPin}),sync,syncSaved,syncRejected});
+})();
+
 
 function resetIdleTimer(ms) { clearTimeout(idleTimer); idleTimer = setTimeout(resetKiosk, ms || 30000); }
 function currentIdle() { return (!$('screenRecords').classList.contains('hidden') || !$('screenContent').classList.contains('hidden')) ? 60000 : 30000; }
@@ -745,6 +1025,10 @@ function renderPin() { $('displayPin').innerHTML = pin ? pin.split('').map(funct
 function setPinMsg(t, c) { $('msgPin').textContent = t; $('msgPin').className = 'msg ' + (c || ''); }
 
 async function submitPin() {
+  if (typeof KioskSubmission !== 'undefined' && mode !== 'RECORDS') return KioskSubmission.submit(mode, 'AUTO');
+  return submitPinLegacy_();
+}
+async function submitPinLegacy_() {
   if (busy) return;
   if (pin.length !== 4) { setPinMsg('PIN must be 4 digits.', 'err'); return; }
   busy = true; $('keypadPin').classList.add('disabled');
@@ -823,6 +1107,10 @@ function showNoInConfirm(msg) {
   showScreen('screenNoIn'); resetIdleTimer(30000);
 }
 async function confirmNoIn(yes) {
+  if (typeof KioskSubmission !== 'undefined') return KioskSubmission.confirm(yes);
+  return confirmNoInLegacy_(yes);
+}
+async function confirmNoInLegacy_(yes) {
   if (busy || !noInPin) return;
   busy = true;
   $('screenNoIn').querySelectorAll('.bopt').forEach(function (b) { b.disabled = true; b.style.opacity = '.5'; });
@@ -895,6 +1183,10 @@ function showBreakChoices(d) {
   showScreen('screenBreak'); resetIdleTimer(30000);
 }
 async function doBreak(op) {
+  if (typeof KioskSubmission !== 'undefined') return KioskSubmission.breakAction(op);
+  return doBreakLegacy_(op);
+}
+async function doBreakLegacy_(op) {
   if (busy || !breakPin) return;
   busy = true;
   $('brkOpts').querySelectorAll('button').forEach(function (b) { b.disabled = true; b.style.opacity = '.5'; });
@@ -995,6 +1287,7 @@ function staffText(t) {
 // V61SAFE STAFFTEXT END
 function showResult(cls, icon, title, name, detail, needsTap) {
   clearTimeout(resultTimer);
+  if ($('resultState')) { $('resultState').classList.add('hidden'); $('resultBox').removeAttribute('data-confirmation'); $('resultBtn').textContent = 'OK'; }
   $('resultBox').className = 'result ' + cls;
   $('resultIcon').textContent = icon; $('resultTitle').textContent = title;
   $('resultName').textContent = name; $('resultDetail').textContent = staffText(detail); // V61SAFE K7
@@ -1351,7 +1644,7 @@ function dropFrom(q, localId) { for (let i = q.length - 1; i >= 0; i--) if (q[i]
 let KIOSK_FLOW = 0;
 function punchAckMatches(p, dir, r) {
   const d = r && r.ok && r.data, a = d && d.ack;
-  if (!d || !a || a.protocol !== 2) return false;
+  if (!d || d.voidFlag === true || !a || a.protocol !== 2) return false;
   if (['rawId', 'localId', 'employeeId', 'direction', 'terminalId'].some(function (f) { return typeof a[f] !== 'string' || !a[f]; })) return false;
   return typeof d.rawId === 'string' && d.rawId === a.rawId &&
     d.employeeId === a.employeeId && d.direction === a.direction && d.terminalId === a.terminalId &&
@@ -1383,6 +1676,7 @@ function queueOffline(punch, dir) {
   const localId = punch.localId || (getConfig().terminalId + '-' + Date.now() + '-' + Math.floor(Math.random() * 1e6)); // H3: reuse the online punch's ID
   const item = { localId: localId, direction: dir, originalTimestamp: punch.at || new Date(nowMs()).toISOString(), // AUDIT2 B1: corrected time
     employeeId: punch.employeeId, pinSealed: punch.pinSealed || '', terminalId: punch.terminalId || getConfig().terminalId, url: punch.url || getConfig().url, proto: 2 };
+  if (punch.intentVersion === 1) { item.intentVersion = 1; if (punch.anchorLocalId) item.anchorLocalId = punch.anchorLocalId; }
   const saved = editList(LS.queue, function (q) { if (!q.some(function (x) { return x.localId === localId; })) q.push(item); });
   updateStatusBar();
   return saved ? localId : '';
@@ -1422,6 +1716,10 @@ function keepEvidence(rec) {
 // the queue marked refused (its encrypted PIN removed): never sent again; it moves to the list once the Admin cleared it.
 // false only when nothing could be saved.
 function moveToEvidence(item, reason, code) {
+  const work = function () { return moveToEvidenceLegacy_(item, reason, code); };
+  return typeof KioskIntentStore !== 'undefined' ? KioskIntentStore.withData(work) : work();
+}
+function moveToEvidenceLegacy_(item, reason, code) {
   if (keepEvidence({ localId: item.localId, employeeId: item.employeeId, direction: item.direction, originalTimestamp: item.originalTimestamp, terminalId: item.terminalId || '', url: item.url || '', reason: reason, code: code || '' })) {
     return editList(LS.queue, function (q) { dropFrom(q, item.localId); });
   }
@@ -1439,11 +1737,16 @@ async function sealLegacyPins() {
     if ((await within(pinVault.open(s), VAULT_WAIT_MS)) === p) done[x.localId] = { p: p, s: s };
   }
   if (!Object.keys(done).length) return false;
-  return editList(LS.queue, function (q) { q.forEach(function (x) {
-    const d = done[x.localId]; if (d && !x.pinSealed && String(x.pin) === d.p) { x.pinSealed = d.s; delete x.pin; } }); });
+  const applySealed = function () { return editList(LS.queue, function (q) { q.forEach(function (x) {
+    const d = done[x.localId]; if (d && !x.pinSealed && String(x.pin) === d.p) { x.pinSealed = d.s; delete x.pin; } }); }); };
+  return typeof KioskIntentStore !== 'undefined' ? KioskIntentStore.withData(applySealed) : applySealed();
 }
 let syncing = false;
 async function syncQueue() {
+  if (typeof KioskSubmission !== 'undefined') { try { return await KioskSubmission.sync(syncQueueLegacy_); } catch (_) { return; } }
+  return syncQueueLegacy_();
+}
+async function syncQueueLegacy_() {
   if (syncing || !isConfigured()) return;
   if (!readQueue(LS.queue).length) { updateStatusBar(); return; }
   syncing = true;
@@ -1454,11 +1757,11 @@ async function syncQueue() {
     for (const item of readQueue(LS.queue)) {
       if (!queueBelongsHere(item, c)) continue; // unbound legacy or another setup: evidence retained, never redirected
       if (wait[item.employeeId]) continue;
-      if (item.refused) { if (!moveToEvidence(item, item.refused.reason, item.refused.code)) break; continue; } // V61SAFE K5: never sent again
+      if (item.refused) { if (!await moveToEvidence(item, item.refused.reason, item.refused.code)) break; continue; } // V61SAFE K5: never sent again
       let pin = item.pin; // a V61 punch whose PIN could not be encrypted yet: sent as on V61
       if (!pin) {
         const opened = item.pinSealed ? await within(pinVault.open(item.pinSealed).then(function (p) { return p === null ? 'BAD' : p; }), VAULT_WAIT_MS) : 'BAD';
-        if (opened === 'BAD') { if (!moveToEvidence(item, 'PIN could not be recovered on this kiosk — not sent', 'PIN_UNAVAILABLE')) break; continue; } // never sent with a wrong PIN
+        if (opened === 'BAD') { if (!await moveToEvidence(item, 'PIN could not be recovered on this kiosk — not sent', 'PIN_UNAVAILABLE')) break; continue; } // never sent with a wrong PIN
         if (typeof opened !== 'string' || opened === 'TIMEOUT') break; // the vault does not answer right now: keep everything, try again later
         pin = opened;
       }
@@ -1466,17 +1769,27 @@ async function syncQueue() {
       let result;
       try {
         result = await api('syncOfflinePunch', { localId: item.localId, direction: item.direction, originalTimestamp: item.originalTimestamp,
-          employeeId: item.employeeId, pin: pin, method: 'PIN', terminalId: item.terminalId, terminalSecret: c.secret, ack: 2 }, undefined, item.url);
+          employeeId: item.employeeId, pin: pin, method: 'PIN', terminalId: item.terminalId, terminalSecret: c.secret, ack: 2, ...(item.intentVersion === 1 ? { intentVersion: 1, intentOp: item.direction, ...(item.anchorLocalId ? { anchorLocalId: item.anchorLocalId } : {}) } : {}) }, undefined, item.url);
       } catch (e) { break; }
       if (!result || typeof result.ok !== 'boolean' || (!result.ok && (!result.error || typeof result.error.code !== 'string'))) break;
       const code = !result.ok && result.error ? result.error.code : '';
       if (code === 'TERMINAL_INVALID') break;
       if (code === 'BUSY' || code === 'INTERNAL_ERROR') break; // C2: temporary — keep it, retry next sync
       if (code === 'PIN_LOCKED') { wait[item.employeeId] = 1; continue; } // V61SAFE K6: locked for now — kept, sent again later
-      if (!result.ok) { if (!moveToEvidence(item, result.error ? result.error.message : 'Rejected', code)) break; continue; }
-      if (!await verifyPunchAck(item, item.direction, result, c)) break; // unknown/mismatched acknowledgment keeps evidence and photo
-      if (result.data && result.data.rawId) linkPhoto(item.localId, result.data.rawId, c); // PHOTO
-      editList(LS.queue, function (q) { dropFrom(q, item.localId); });
+      if (!result.ok) { if (!await moveToEvidence(item, result.error ? result.error.message : 'Rejected', code)) break; if (typeof KioskSubmission !== 'undefined') await KioskSubmission.syncRejected(item, code); continue; }
+      let proofItem = item;
+      if (item.intentVersion === 1 && result.data && result.data.alreadyCurrent === true && result.data.punch) {
+        const p = result.data.punch;
+        if (!p.ack || !p.ack.localId || p.employeeId !== item.employeeId || p.direction !== item.direction || p.terminalId !== item.terminalId) break;
+        proofItem = Object.assign({}, item, { localId: p.ack.localId });
+        result = { ok: true, data: p };
+      }
+      if (result.data && result.data.voidFlag === true) break;
+      if (!await verifyPunchAck(proofItem, item.direction, result, c)) break; // unknown/mismatched acknowledgment keeps evidence and photo
+      if (proofItem.localId === item.localId && result.data && result.data.rawId) await Promise.resolve(linkPhoto(item.localId, result.data.rawId, c)).catch(function () {});
+      if (typeof KioskSubmission !== 'undefined') await KioskSubmission.syncSaved(item, result.data, proofItem.localId !== item.localId); // PHOTO
+      const remove = function () { return editList(LS.queue, function (q) { dropFrom(q, item.localId); }); };
+      if (typeof KioskIntentStore !== 'undefined') await KioskIntentStore.withData(remove); else remove();
     }
   } finally { syncing = false; updateStatusBar(); flushPhotos(); }
 }
@@ -1537,6 +1850,7 @@ async function refreshHome() {
     lsSet(LS.venueId, d.venueId || ''); lsSet(LS.venueName, d.venueName || d.venueId || '');
     if (d.slideSeconds) { SLIDE_MS = d.slideSeconds * 1000; lsSet('kiosk_slideSec', String(d.slideSeconds)); }
     if (d.pinnedSlideSeconds) { PINNED_MS = d.pinnedSlideSeconds * 1000; lsSet('kiosk_pinnedSlideSec', String(d.pinnedSlideSeconds)); }
+    if (typeof KioskSubmission !== 'undefined') KioskSubmission.onHome(d, c);
     applyServerButtonSound(d.buttonSound); // KSOUND
     applyServerCamera(d.camera); // PHOTO
     contentCache = d.announcements || [];
@@ -1725,15 +2039,27 @@ function capturePhoto() {
   } catch (e) { return null; }
 }
 function queuePhoto(image, rawId, localId, originalConfig) {
+  const work = function () { return queuePhotoLegacy_(image, rawId, localId, originalConfig); };
+  return typeof KioskIntentStore !== 'undefined' ? KioskIntentStore.withData(work) : work();
+}
+function queuePhotoLegacy_(image, rawId, localId, originalConfig) {
   if (!image || (!rawId && !localId)) return;
   const c = originalConfig || getConfig();
-  editList(PHOTO_Q, function (q) {
+  const saved = editList(PHOTO_Q, function (q) {
+    if (localId && q.some(function (x) { return x.localId === localId && queueBelongsHere(x, c); })) return;
     // Pending photo evidence is kept until an index-verified upload; never expire or truncate it.
     q.push({ rawId: rawId || '', localId: localId || '', image: image, at: Date.now(), terminalId: c.terminalId, url: c.url });
   });
   if (rawId) setTimeout(flushPhotos, 1500);
+  return saved;
 }
 function linkPhoto(localId, rawId, originalConfig) {
+  const work = function () { return linkPhotoLegacy_(localId, rawId, originalConfig); };
+  const out = typeof KioskIntentStore !== 'undefined' ? KioskIntentStore.withData(work) : work();
+  if (typeof KioskIntentStore !== 'undefined') Promise.resolve(out).then(function () { setTimeout(flushPhotos, 1500); }, function () {});
+  return out;
+}
+function linkPhotoLegacy_(localId, rawId, originalConfig) {
   const c = originalConfig || getConfig();
   editList(PHOTO_Q, function (q) {
     q.forEach(function (x) { if (x.localId === localId && queueBelongsHere(x, c)) x.rawId = rawId; });
@@ -1758,10 +2084,11 @@ async function flushPhotos() {
       if (r && r.ok && r.data && r.data.rawId === item.rawId && r.data.indexVerified === true &&
           r.data.terminalId === item.terminalId && typeof r.data.photoId === 'string' && r.data.photoId &&
           typeof r.data.fileId === 'string' && r.data.fileId && (r.data.saved === true || r.data.duplicate === true)) {
-        editList(PHOTO_Q, function (q) {
+        const removePhoto = function () { return editList(PHOTO_Q, function (q) {
           for (let i = q.length - 1; i >= 0; i--) if (q[i].rawId === item.rawId && q[i].localId === item.localId &&
             q[i].terminalId === item.terminalId && q[i].url === item.url && q[i].at === item.at && q[i].image === item.image) q.splice(i, 1);
-        });
+        }); };
+        if (typeof KioskIntentStore !== 'undefined') await KioskIntentStore.withData(removePhoto); else removePhoto();
       } // unconfirmed/error upload retains the photo
     }
   } finally { photoBusy = false; }
