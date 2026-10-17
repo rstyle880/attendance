@@ -580,8 +580,9 @@
 
         <div class="grid" style="margin-top:16px;">
           <div><label for="clkVenue">Venue</label><select id="clkVenue"></select></div>
-          <div><label for="clkReason">Reason</label>
+          <div><label for="clkReason">Reason (optional)</label>
             <select id="clkReason">
+              <option value="">No reason provided</option>
               <option>Admin Authorized</option><option>Forgot ID</option><option>Lost ID</option><option>Damaged ID</option>
               <option>New Employee - ID Not Issued</option><option>Replacement ID Pending</option>
               <option>RFID Reader Problem</option><option>ID Not Recognized</option>
@@ -589,7 +590,7 @@
               <option>Other</option>
             </select>
           </div>
-          <div class="full"><label for="clkNote">Note (required when reason is Other)</label><input id="clkNote" placeholder="e.g. Kiosk was offline"></div>
+          <div class="full"><label for="clkNote">Note (optional)</label><input id="clkNote" placeholder="e.g. Kiosk was offline"></div>
         </div>
         <div class="actions">
           <button class="btn btn-in" onclick="run(this, function () { return clockAction('clockIn'); })">Clock in now</button>
@@ -600,13 +601,13 @@
 
       <div class="block" id="missedBlock">
         <h2>Add a missed punch</h2>
-        <p class="sub">For a clock-in or clock-out the employee forgot. Enter the real time it happened (Saipan time). A reason is required.</p>
+        <p class="sub">For a clock-in or clock-out the employee forgot. Enter the real time it happened (Saipan time). A reason is optional.</p>
         <div class="grid three">
           <div><label for="mpDir">Type</label>
             <select id="mpDir"><option value="" disabled>Choose punch type</option><option value="OUT" selected>Clock OUT</option><option value="IN">Clock IN</option><option value="BREAK_START">Break start / resume</option><option value="BREAK_PAUSE">Break pause</option><option value="BREAK_END">Break end</option></select></div>
           <div><label for="mpDate">Date</label><input id="mpDate" type="date"></div>
           <div><label for="mpTime">Time</label><input id="mpTime" type="time"></div>
-          <div class="full"><label for="mpReason">Reason</label><input id="mpReason" placeholder="e.g. Forgot to clock out; supervisor confirmed left at 1:00 AM"></div>
+          <div class="full"><label for="mpReason">Reason (optional)</label><input id="mpReason" placeholder="e.g. Forgot to clock out; supervisor confirmed left at 1:00 AM"></div>
         </div>
         <div class="actions">
           <button class="btn btn-primary" onclick="run(this, addMissedPunchUI)">Add missed punch</button>
@@ -972,7 +973,7 @@
         <div class="block">
           <div class="list-head"><h3>Holiday history</h3><button class="btn btn-secondary btn-sm" onclick="run(this, loadHolidays)">Refresh list</button></div>
           <p class="sub">Every processing run (batch). A reversal voids the batch's remaining Holiday entries (kept, marked Voided) and needs a reason. An unfinished batch (the run was interrupted) must be finished before the holiday can be processed again.</p>
-          <div class="table-wrap"><table id="hhTable"><thead><tr><th>Batch</th><th>Holiday</th><th>Status</th><th>Credited</th><th>Approved by</th><th>When</th><th>Warnings</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table id="hhTable"><thead><tr><th>Batch</th><th>Holiday</th><th>Status</th><th>Credited</th><th>Approved by</th><th>When</th><th>Warnings / information</th><th></th></tr></thead><tbody></tbody></table></div>
           <div id="hhMsg" class="msg" style="white-space:pre-line"></div>
         </div>
       </div>
@@ -1108,7 +1109,7 @@
         <select id="teAddVenue" style="max-width:190px"></select>
       </div>
     </div>
-    <div class="grid" style="margin-top:10px"><div class="full"><label for="teReason">Reason (required)</label><input id="teReason" maxlength="200" placeholder="e.g. Employee forgot to clock out — confirmed by supervisor"></div></div>
+    <div class="grid" style="margin-top:10px"><div class="full"><label for="teReason">Reason (optional for edits/additions; required for removals)</label><input id="teReason" maxlength="200" placeholder="e.g. Employee forgot to clock out — confirmed by supervisor"></div></div>
     <div id="teMsg" class="msg" style="white-space:pre-line"></div>
     <div class="actions">
       <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save corrections</button>
@@ -1791,7 +1792,11 @@ function renderHolidays() {
     const st = el('span', null, [holPill(b.status.replace('_', ' '), cls)]);
     if (b.reversedAt) st.appendChild(el('div', { className: 'sub', style: 'margin:2px 0 0', text: 'Reversed by ' + b.reversedBy + ', ' + saipanDateTime(b.reversedAt) + ' — ' + b.reverseReason }));
     if (b.note && b.status === 'NEEDS_ATTENTION') st.appendChild(el('div', { className: 'sub', style: 'margin:2px 0 0', text: b.note }));
-    const warn = b.warnings.length ? el('details', null, [el('summary', { text: b.warnings.length + ' warning(s)' }), el('div', { style: 'white-space:pre-line;font-size:12px', text: b.warnings.join('\n') })]) : '—';
+    const warn = el('div');
+    (b.information || []).forEach(function (text) { warn.appendChild(el('div', { className: 'sub', text: text })); });
+    const warningDetails = b.warnings.length ? el('details', null, [el('summary', { text: b.warnings.length + ' warning(s)' }), el('div', { style: 'white-space:pre-line;font-size:12px', text: b.warnings.join('\n') })]) : '—';
+    if (b.warnings.length) warn.appendChild(warningDetails);
+    else if (!(b.information || []).length) warn.textContent = '—';
     addRow(hb, [b.batchId, names[b.holidayId] || b.holidayId, st, String(b.credited) + ' of ' + b.employees, b.createdBy, saipanDateTime(b.createdAt), warn, acts]);
   });
 }
@@ -1875,7 +1880,7 @@ function renderPreview() {
     }
     const tr = addRow(tb, [box, x.name + ' (' + x.employeeId + ')', x.department, holVenue(x.venue),
       holPill(HOL_STATE[x.state], { ELIGIBLE: 'in', EXCLUDED: 'adm', REVIEW: 'out' }[x.state]),
-      x.employmentStatus + (x.partTime ? ' · Part-Time' : '') + (x.reasons.length ? ' — ' + x.reasons.join(' ') : '') + (x.warnings.length ? ' ⚠ ' + x.warnings.join(' ') : '')]);
+      x.employmentStatus + (x.partTime ? ' · Part-Time' : '') + (x.reasons.length ? ' — ' + x.reasons.join(' ') : '') + (x.warnings.length ? ' ⚠ ' + x.warnings.join(' ') : '') + ((x.information || []).length ? ' · ' + x.information.join(' ') : '')]);
     tr.dataset.id = x.employeeId; tr.dataset.state = x.state; tr.dataset.find = (x.name + ' ' + x.employeeId).toLowerCase();
   });
   hpApplyFilter(); hpCount();
@@ -2193,7 +2198,6 @@ async function addMissedPunchUI() {
   if (pinFix && !mpDir.value) { setMsg('mpMsg', false, 'Choose the punch type verified from CCTV.'); return; }
   if (!verifyPinFix_(pinFix)) return;
   if (!mpDate.value || !mpTime.value) { setMsg('mpMsg', false, 'Enter the date and time it really happened.'); return; }
-  if (mpReason.value.trim().length < 3) { setMsg('mpMsg', false, 'Please write a short reason.'); mpReason.focus(); return; }
   const savedDate = mpDate.value;
   if (pinFix) { pinFix.corrected = false; pinFix.refreshed = false; }
   if (pinFix) pinFix.saving = true;
@@ -4558,7 +4562,7 @@ async function saveTcEdit() {
       text: 'Add ' + dirLabel(teAddDir.value) + ' ' + teAddTime.value + ' (' + shortDate(teAddDate.value) + ')' });
   }
   if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
-  if (reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for the correction.'); teReason.focus(); return; }
+  if (changes.some(function (x) { return x.kind === 'remove'; }) && reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for removing a punch.'); teReason.focus(); return; }
   if (!confirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason)) return;
   const pinFix = pinFixForEmployee_(TE.c.employeeId);
   if (!verifyPinFix_(pinFix)) return;
