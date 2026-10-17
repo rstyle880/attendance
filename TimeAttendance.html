@@ -2808,7 +2808,7 @@ function renderTimecard(c, startDate, endDate) {
               onclick: function () { toggleWaiver(this, r); } })
           ]));
         }
-        if (r.doubleShiftAdjustmentId || (r.canWaive && !r.breakWaived && r.breakMinutes === 30 && r.timeIn && r.timeOut && !r.flag && r.grossHours >= 1 && /^Break 30 min(;|$)/.test(r.breakNote || ''))) {
+        if (r.doubleShiftAdjustmentId || (r.canWaive && !r.breakWaived && r.breakMinutes === 30 && r.timeIn && r.timeOut && !r.flag && Number.isFinite(r.hours) && Math.round(r.hours * 60) > 720 && /^Break 30 min(;|$)/.test(r.breakNote || ''))) {
           noteCell.appendChild(el('div', { className: 'no-print', style: 'margin-top:4px' }, [
             el('button', { className: 'btn btn-secondary btn-sm tc-double-break',
               text: r.doubleShiftAdjustmentId ? 'Cancel double-shift break approval…' : 'Approve Double-Shift Break — 60 minutes…',
