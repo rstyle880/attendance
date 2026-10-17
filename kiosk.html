@@ -836,6 +836,7 @@ const KioskSubmission = (function () {
     const body={employeeId:e.employeeId,pin:ctx.pin,method:'PIN',terminalId:e.terminalId,terminalSecret:ctx.c.secret,localId:e.id,intentVersion:1,intentOp:e.action==='BREAK'?e.op:e.action,ack:2};
     if(e.anchorLocalId)body.anchorLocalId=e.anchorLocalId;
     if(e.action==='BREAK')body.op=e.op;
+    else body.postCommitAck=1;
     if(extra&&extra.confirmNoIn)body.confirmNoIn=true;
     // Explicit no-IN confirmation continues a known non-writing OUT response.
     // It is not an uncertain retry or a new photo/attendance attempt.
@@ -879,7 +880,7 @@ const KioskSubmission = (function () {
       }
       if(!receipt(proofEvent,p))throw new NetworkError('Unconfirmed acknowledgment');
       if(e.action==='BREAK') { if(result.data.intentVersion!==1||!p.ack)throw new NetworkError('Unsupported break acknowledgment'); }
-      else if(!await verifyPunchAck({...body,localId:proofEvent.id},e.action,{ok:true,data:p},ctx.c))throw new NetworkError('Unconfirmed stored row');
+      else if(!await (canonical ? verifyPunchAck : verifyFreshPunchAck)({...body,localId:proofEvent.id},e.action,{ok:true,data:p},ctx.c))throw new NetworkError('Unconfirmed stored row');
       if(canonical) {
         await update(e.id,{status:'SERVER_CONFIRMED',receipt:{localId:p.ack.localId,rawId:p.rawId,direction:p.direction,at:p.originalTimestamp,terminalId:p.terminalId}}).catch(()=>{});
         // The fresh duplicate attempt's photo must never replace evidence on the canonical event.
@@ -1650,6 +1651,15 @@ function punchAckMatches(p, dir, r) {
     d.employeeId === a.employeeId && d.direction === a.direction && d.terminalId === a.terminalId &&
     a.localId === String(p.localId) && a.employeeId === String(p.employeeId) &&
     a.direction === dir && a.terminalId === String(p.terminalId);
+}
+// Only the opt-in backend contract can supply this post-flush stored-row proof.
+async function verifyFreshPunchAck(p, dir, r, who) {
+  const a = r && r.ok && r.data && r.data.commitAck;
+  if (p.postCommitAck === 1 && punchAckMatches(p, dir, r) && a && a.protocol === 1 &&
+      ['rawId', 'localId', 'employeeId', 'direction', 'terminalId'].every(function (f) {
+        return typeof a[f] === 'string' && !!a[f] && a[f] === r.data.ack[f];
+      })) return true;
+  return verifyPunchAck(p, dir, r, who);
 }
 // Confirm the claimed RawID against the server's LocalId lookup; request echoes are not proof.
 async function verifyPunchAck(p, dir, r, who) {
