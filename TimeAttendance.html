@@ -660,7 +660,7 @@
         <div class="actions">
           <button class="btn btn-primary" onclick="run(this, viewArchivedCard)">View time card</button>
           <button class="btn btn-secondary" id="arPrint" onclick="printTimecards()" disabled>Print</button>
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-left:6px"><input type="checkbox" id="arPhotos" onchange="togglePhotoPages('archOut', this.checked)"> Include punch photos</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-left:6px"><input type="checkbox" id="arPhotos" onchange="togglePhotoPages('archOut', this.checked)"> Include punch photos</label><span class="sub no-print" data-photo-status="archOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
         </div>
         <div id="arMsg" class="msg" style="white-space:pre-line"></div>
       </div>
@@ -688,7 +688,7 @@
         <div class="actions">
           <button class="btn btn-primary" onclick="run(this, loadReport)">Show time cards</button>
           <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-left:6px"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)"> Include punch photos</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-left:6px"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
         </div>
         <div id="repMsg" class="msg"></div>
       </div>
@@ -1463,7 +1463,7 @@ async function call(action, payload, opts) {
   const url = apiUrl();
   if (!url) return { ok: false, error: { code: 'NO_URL', message: 'Set the Web App URL on the login screen first.' } };
   const bg = !!(opts && opts.bg), gen = SESSION_GEN; // SESSION GUARD: the session this request belongs to
-  const stale = function () { if (gen !== SESSION_GEN) throw STALE_SESSION_; };
+  const stale = function () { if (gen !== SESSION_GEN) throw STALE_SESSION_; if (opts && opts.beforeSend) opts.beforeSend(); };
   const body = Object.assign({}, payload || {}, { token: sessionToken });
   if (bg) body.bg = true; else lastServerTouch = Date.now();
   const idemp = IDEMP_OK && SAVE_ACTIONS.test(action);
@@ -1965,6 +1965,7 @@ const TAB_LOADERS = {
   }
 };
 function showTab(name, noLoad) {
+  if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); }
   try { sessionStorage.setItem('admin_tab', name); } catch (e) {}
   currentTab = name;
   document.querySelector('#appShell main').classList.toggle('wide', name === 'dashboard');
@@ -1972,6 +1973,7 @@ function showTab(name, noLoad) {
   document.querySelectorAll('#appShell section').forEach(function (s) { s.classList.toggle('active', s.id === name); });
   resetScrollTop(); // NAV: every menu opens at the very top
   if (!noLoad && TAB_LOADERS[name]) TAB_LOADERS[name]();
+  if (name === 'reports') resumePhotoPages_(tcMode === 'arch' ? 'archOut' : 'reportOut');
 }
 /** NAV: put the page back at the top (0, 0). One place for every menu change. */
 function resetScrollTop() {
@@ -2609,19 +2611,22 @@ async function loadReport() {
     }
     document.getElementById('repSearch').value = reportEmp.name + ' (' + reportEmp.employeeId + ')';
   }
+  cancelPhotoPages_('reportOut');
   const seq = ++REPORT_SEQ; // A1 (V1): this request's number, taken BEFORE it is sent — a newer request or a clear makes it stale
+  const photoRefresh = beginPhotoRefresh_('reportOut');
   setReportLoading(true);
   let result;
   try {
     result = await call('timecardReport', {
       startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp ? reportEmp.employeeId : ''
     });
-  } finally { if (seq === REPORT_SEQ) setReportLoading(false); } // TCNEWEST: only the newest request ends the Loading state
-  if (seq !== REPORT_SEQ) return; // A1 (V1): a newer request (or a clear) replaced this one — its late answer changes nothing
+  } catch (e) { finishPhotoRefresh_('reportOut', photoRefresh, false); throw e; }
+  finally { if (seq === REPORT_SEQ) setReportLoading(false); } // TCNEWEST: only the newest request ends the Loading state
+  if (seq !== REPORT_SEQ) { finishPhotoRefresh_('reportOut', photoRefresh, false); return; } // A1: ignore obsolete response
   const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
-  if (!result.ok) { setMsg('repMsg', false, result.error.message); document.getElementById('printBtn').disabled = true; return; }
+  if (!result.ok) { finishPhotoRefresh_('reportOut', photoRefresh, false); setMsg('repMsg', false, result.error.message); document.getElementById('printBtn').disabled = true; return; }
   const cards = result.data.cards;
-  if (!cards.length) { setMsg('repMsg', false, 'No punches in this period.'); document.getElementById('printBtn').disabled = true; return; }
+  if (!cards.length) { finishPhotoRefresh_('reportOut', photoRefresh, true); setMsg('repMsg', false, 'No punches in this period.'); document.getElementById('printBtn').disabled = true; return; }
   const issues = cards.reduce(function (n, c) { return n + c.issues; }, 0);
   setMsg('repMsg', issues === 0, cards.length + ' time card(s) ready.' +
     (issues ? ' ' + issues + ' shift(s) have a missing punch (marked in red) — fix them before payroll.' : ''));
@@ -2629,7 +2634,7 @@ async function loadReport() {
   renderCards_(out, result.data, seq, function () {
     document.getElementById('printBtn').disabled = false;
     saveReportState(result.data);
-    if (document.getElementById('tcPhotos').checked) togglePhotoPages('reportOut', true); // PHOTO
+    finishPhotoRefresh_('reportOut', photoRefresh, true); // PHOTO: rendering is complete before recovery
   });
   return seq; // A successful request marker; callers must still check drawing and cancellation.
 }
@@ -2693,6 +2698,7 @@ function restoreReportState(showSaved) {
   return !!(data && data.cards);
 }
 function clearReportState() {
+  resetPhotoPages_('reportOut');
   try { sessionStorage.removeItem('admin_tc_state'); sessionStorage.removeItem('admin_tc_data'); } catch (e) {}
 }
 // TCCLEAR: logout / idle logout / expired session (endSession) — forget the saved Time Cards and empty
@@ -3839,13 +3845,18 @@ function fmt(d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-
 let tcMode = 'live';
 const ARCH = { employees: [], periods: [], current: null, previewing: false };
 function tcView(mode) {
+  cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut');
   tcMode = mode;
   document.querySelectorAll('#tcNav button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === mode); });
   document.getElementById('archPanel').hidden = mode !== 'arch';
   document.getElementById('livePanel').hidden = mode !== 'live';
   document.getElementById('archOut').hidden = mode !== 'arch';
   document.getElementById('reportOut').hidden = mode !== 'live';
-  if (mode === 'arch') loadArchiveLists();
+  if (mode === 'arch') {
+    const refresh = beginPhotoRefresh_('archOut', 'metadata');
+    Promise.resolve(loadArchiveLists()).then(function () { finishPhotoRefresh_('archOut', refresh, true); },
+      function () { finishPhotoRefresh_('archOut', refresh, false); });
+  } else resumePhotoPages_('reportOut');
 }
 async function afterCardChange() { return ARCH.previewing ? previewCorrection() : loadReport(); }
 async function loadArchiveLists(preselectEmpId) {
@@ -3879,15 +3890,20 @@ function fillArchEmpSelect(preselect) {
 async function viewArchivedCard() {
   const emp = arEmp.value, start = arPeriod.value;
   if (!emp || !start) { setMsg('arMsg', false, 'Choose an employee and an archived pay period.'); return; }
+  cancelPhotoPages_('archOut');
+  const photoRefresh = beginPhotoRefresh_('archOut');
   ARCH.previewing = false;
-  const r = await call('getArchivedTimecard', { employeeId: emp, periodStart: start });
+  let r;
+  try { r = await call('getArchivedTimecard', { employeeId: emp, periodStart: start }); }
+  catch (e) { finishPhotoRefresh_('archOut', photoRefresh, false); throw e; }
+  if (!photoRefreshCurrent_('archOut', photoRefresh)) { finishPhotoRefresh_('archOut', photoRefresh, false); return; }
   const out = document.getElementById('archOut'); out.innerHTML = '';
   document.getElementById('arPrint').disabled = true;
-  if (!r.ok) { setMsg('arMsg', false, r.error.message); return; }
+  if (!r.ok) { finishPhotoRefresh_('archOut', photoRefresh, false); setMsg('arMsg', false, r.error.message); return; }
   ARCH.current = r.data;
   if (!r.data.found && !r.data.correction) {
     setMsg('arMsg', false, 'No archived time card for this employee in this pay period (no attendance or paid hours were recorded).');
-    out.appendChild(correctionBar(r.data)); return;
+    out.appendChild(correctionBar(r.data)); finishPhotoRefresh_('archOut', photoRefresh, true); return;
   }
   clearMsg('arMsg');
   if (r.data.found) {
@@ -3900,9 +3916,10 @@ async function viewArchivedCard() {
     out.appendChild(correctionBar(r.data));
     out.appendChild(card);
     document.getElementById('arPrint').disabled = false;
-    if (document.getElementById('arPhotos').checked) togglePhotoPages('archOut', true); // PHOTO
+    finishPhotoRefresh_('archOut', photoRefresh, true); // PHOTO: historical card is ready
   } else {
     out.appendChild(correctionBar(r.data));
+    finishPhotoRefresh_('archOut', photoRefresh, true);
   }
   if (r.data.correction) await previewCorrection();
 }
@@ -4426,10 +4443,13 @@ async function setKioskCamera(btn, t, want) {
   });
 }
 /** Photos for many punches (batches of 60). Returns { rawId: { status, dataUrl } }. */
-async function loadPunchPhotos(ids) {
+async function loadPunchPhotos(ids, beforeSend) {
   const out = {};
   for (let i = 0; i < ids.length; i += 60) {
-    const r = await call('getPunchPhotos', { rawIds: ids.slice(i, i + 60) }, { bg: true });
+    if (beforeSend) beforeSend();
+    const r = await call('getPunchPhotos', { rawIds: ids.slice(i, i + 60) }, { bg: true, beforeSend: beforeSend });
+    if (beforeSend) beforeSend();
+    if (beforeSend && !r.ok) throw PHOTO_LOAD_FAILED_;
     if (r.ok) Object.assign(out, r.data);
   }
   return out;
@@ -4444,12 +4464,141 @@ function photoThumb(p, w, zoom, addedByAdmin) {
   const txt = p && p.status === 'Deleted' ? 'Photo removed (90-day retention)' : addedByAdmin ? 'No photo (added by admin)' : 'No photo';
   return el('div', { className: 'ph-none', style: 'width:' + w + 'px;height:' + h + 'px', text: txt });
 }
-/** Adds / removes the photo page on every time card shown in a container. */
-async function togglePhotoPages(containerId, on) {
-  const box = document.getElementById(containerId);
-  box.querySelectorAll('.tc-photos').forEach(function (x) { x.remove(); });
-  if (!on) return;
-  const cards = Array.prototype.slice.call(box.querySelectorAll('.timecard')).filter(function (x) { return x._tc; });
+// Per-container serialized recovery. No fetch abort, image cache, timers, or queue mutation.
+const PHOTO_VIEW_STALE_ = { obsoletePhotoView: true };
+const PHOTO_LOAD_FAILED_ = { photoLoadFailed: true };
+function photoVisible_(id) {
+  const check = document.getElementById(id === 'archOut' ? 'arPhotos' : 'tcPhotos');
+  return currentTab === 'reports' && tcMode === (id === 'archOut' ? 'arch' : 'live') && !!(check && check.checked);
+}
+function photoStatus_(id, text) {
+  const status = document.querySelector('[data-photo-status="' + id + '"]');
+  if (!status) return;
+  text = photoVisible_(id) ? (text || '') : '';
+  if (status.textContent !== text) status.textContent = text;
+  status.hidden = !text;
+}
+function photoState_(id) {
+  const box = document.getElementById(id);
+  if (!box) return null;
+  const state = box._photoState || (box._photoState = { session: SESSION_GEN, promise: null, pending: false, refresh: null, metadata: null, errors: { refresh: false, metadata: false }, blocked: false, complete: null, failed: false });
+  if (state.session !== SESSION_GEN) {
+    state.session = SESSION_GEN; state.pending = false; state.refresh = null; state.metadata = null; state.errors = { refresh: false, metadata: false }; state.blocked = false; state.complete = null; state.failed = false;
+    box._photoGeneration = (box._photoGeneration || 0) + 1;
+    photoStatus_(id, '');
+  }
+  return state;
+}
+function photoCards_(id) {
+  const box = document.getElementById(id);
+  return box ? Array.prototype.slice.call(box.querySelectorAll('.timecard')).filter(function (card) {
+    return card._tc && (id !== 'archOut' || !card.closest('#corrPreview'));
+  }) : [];
+}
+function photoSelection_(id) {
+  return id === 'archOut' ? [arEmp.value, arPeriod.value] : [repStart.value, repEnd.value, reportEmp ? reportEmp.employeeId : '', document.getElementById('repSearch').value];
+}
+function photoCardsMatch_(id, cards) {
+  const selection = photoSelection_(id);
+  return cards.length && cards.every(function (card) {
+    const tc = card._tc;
+    return id === 'archOut' ? String(tc.c.employeeId) === selection[0] && tc.startDate === selection[1] :
+      tc.startDate === selection[0] && tc.endDate === selection[1] && (!selection[2] || String(tc.c.employeeId) === String(selection[2]));
+  });
+}
+function cancelPhotoPages_(id) {
+  const box = document.getElementById(id);
+  if (box) {
+    box._photoGeneration = (box._photoGeneration || 0) + 1;
+    if (box._photoState) box._photoState.pending = false;
+  }
+  photoStatus_(id, '');
+}
+function resetPhotoPages_(id) {
+  cancelPhotoPages_(id);
+  const state = photoState_(id);
+  state.refresh = null; state.metadata = null; state.errors = { refresh: false, metadata: false }; state.blocked = false; state.complete = null; state.failed = false;
+}
+function photoRefreshing_(state) { return state.refresh || state.metadata; }
+function beginPhotoRefresh_(id, kind) {
+  cancelPhotoPages_(id);
+  const state = photoState_(id), field = kind === 'metadata' ? 'metadata' : 'refresh';
+  const ticket = { session: SESSION_GEN, field: field, selection: JSON.stringify(photoSelection_(id)), report: REPORT_SEQ };
+  state[field] = ticket; state.errors[field] = false;
+  state.blocked = state.errors.refresh || state.errors.metadata; state.failed = state.blocked;
+  if (field === 'refresh') state.complete = null;
+  photoStatus_(id, 'Waiting for Time Card refresh…');
+  return ticket;
+}
+function photoRefreshCurrent_(id, ticket) {
+  const state = photoState_(id);
+  return state[ticket.field] === ticket && ticket.session === SESSION_GEN && ticket.selection === JSON.stringify(photoSelection_(id)) &&
+    (id !== 'reportOut' || ticket.report === REPORT_SEQ);
+}
+function finishPhotoRefresh_(id, ticket, success) {
+  const state = photoState_(id);
+  if (state[ticket.field] !== ticket || ticket.session !== SESSION_GEN) return;
+  state[ticket.field] = null; state.errors[ticket.field] = !success;
+  state.blocked = state.errors.refresh || state.errors.metadata; state.failed = state.blocked;
+  if (photoRefreshing_(state)) { photoStatus_(id, 'Waiting for Time Card refresh…'); return; }
+  if (success) resumePhotoPages_(id);
+  else photoStatus_(id, 'Photos could not be loaded. Refresh the Time Card to try again.');
+}
+function resumePhotoPages_(id) {
+  if (!photoVisible_(id)) { photoStatus_(id, ''); return Promise.resolve(); }
+  const state = photoState_(id), box = document.getElementById(id);
+  if (photoRefreshing_(state) || state.blocked) {
+    photoStatus_(id, photoRefreshing_(state) ? 'Waiting for Time Card refresh…' : 'Photos could not be loaded. Refresh the Time Card to try again.');
+    return state.promise || Promise.resolve();
+  }
+  if (!photoCardsMatch_(id, photoCards_(id))) { photoStatus_(id, ''); return state.promise || Promise.resolve(); }
+  state.pending = true; state.failed = false;
+  if (state.promise) { photoStatus_(id, 'Loading punch photos…'); return state.promise; }
+  state.promise = Promise.resolve().then(async function () {
+    while (state.pending) {
+      state.pending = false;
+      if (!photoVisible_(id) || photoRefreshing_(state) || state.blocked) break;
+      const cards = photoCards_(id), selection = JSON.stringify(photoSelection_(id));
+      if (!photoCardsMatch_(id, cards)) break;
+      if (state.complete && state.complete.session === SESSION_GEN && state.complete.selection === selection &&
+          state.complete.cards.length === cards.length && cards.every(function (card, i) {
+            return card === state.complete.cards[i] && card._tc === state.complete.contexts[i] && !!card.querySelector('.tc-photos');
+          })) continue;
+      const generation = box._photoGeneration || 0, session = SESSION_GEN, report = REPORT_SEQ;
+      const contexts = cards.map(function (card) { return card._tc; });
+      const beforeSend = function () {
+        if (!photoVisible_(id) || photoRefreshing_(state) || state.blocked || generation !== (box._photoGeneration || 0) || session !== SESSION_GEN ||
+            selection !== JSON.stringify(photoSelection_(id)) || !box.isConnected ||
+            (id === 'reportOut' && report !== REPORT_SEQ) ||
+            cards.some(function (card, i) { return !box.contains(card) || card._tc !== contexts[i]; })) throw PHOTO_VIEW_STALE_;
+      };
+      photoStatus_(id, 'Loading punch photos…');
+      box.querySelectorAll('.tc-photos').forEach(function (node) { node.remove(); });
+      try {
+        await renderPhotoPages_(cards, beforeSend);
+        state.complete = { session: session, selection: selection, cards: cards, contexts: contexts };
+      } catch (e) {
+        if (e !== PHOTO_VIEW_STALE_ && e !== STALE_SESSION_) { state.pending = false; state.failed = true; }
+      }
+    }
+  }).finally(function () {
+    state.promise = null;
+    photoStatus_(id, photoRefreshing_(state) ? 'Waiting for Time Card refresh…' : state.failed ? 'Photos could not be loaded. Refresh the Time Card to try again.' : '');
+  });
+  return state.promise;
+}
+function togglePhotoPages(containerId, on) {
+  const check = document.getElementById(containerId === 'archOut' ? 'arPhotos' : 'tcPhotos');
+  if (check) check.checked = !!on;
+  if (!on) {
+    cancelPhotoPages_(containerId);
+    const box = document.getElementById(containerId);
+    if (box) { if (box._photoState) box._photoState.complete = null; box.querySelectorAll('.tc-photos').forEach(function (node) { node.remove(); }); }
+    return Promise.resolve();
+  }
+  return resumePhotoPages_(containerId);
+}
+async function renderPhotoPages_(cards, beforeSend) {
   const tm = function (iso) { return new Date(iso).toLocaleString('en-US', { timeZone: TZ, weekday: 'short', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }); };
   const all = [];
   const perCard = cards.map(function (card) {
@@ -4461,7 +4610,8 @@ async function togglePhotoPages(containerId, on) {
     list.forEach(function (p) { if (p.rawId) all.push(p.rawId); });
     return list;
   });
-  const photos = await loadPunchPhotos(all);
+  const photos = await loadPunchPhotos(all, beforeSend);
+  beforeSend();
   cards.forEach(function (card, i) {
     const c = card._tc.c;
     const grid = el('div', { className: 'ph-grid' });
