@@ -926,8 +926,9 @@
           <h3>Part-Time employees</h3>
           <p class="sub">Part-Time is a separate classification (not an Employment Status). It is used only by "Exclude Part-Time" when processing a holiday.</p>
           <div class="grid">
-            <div><label for="ptEmp">Employee</label><select id="ptEmp" onchange="ptSync()"></select></div>
+            <div><label for="ptEmp">Select employee (not Part-Time yet)</label><select id="ptEmp" onchange="ptSync()"></select></div>
             <div><label for="ptReason">Reason</label><input id="ptReason" placeholder="e.g. works 20 hours a week"></div>
+            <div><label for="ptCur">Current Part-Time employees</label><select id="ptCur" onchange="ptSync()"></select></div>
           </div>
           <div class="actions">
             <button class="btn btn-secondary" id="ptMark" onclick="run(this, function () { return setPartTimeUI(true); }).then(ptSync)" disabled>Mark Part-Time</button>
@@ -1772,15 +1773,7 @@ function renderHolidays() {
       box.appendChild(el('label', { className: 'hp-opt' }, [c, ' ' + dep]));
     });
   }
-  // PT PICKER (V1): the list starts blank — an employee must be chosen by hand; a choice is kept only within the same login
-  const pe = document.getElementById('ptEmp'), pk = pe.dataset.gen === String(SESSION_GEN) ? pe.value : ''; pe.innerHTML = '';
-  pe.appendChild(el('option', { value: '', text: 'Select employee...' }));
-  EMPLOYEES.forEach(function (e) { pe.appendChild(el('option', { value: e.employeeId, text: e.name + ' (' + e.employeeId + ')' + (HOL.partTime[e.employeeId] ? ' · Part-Time' : '') })); });
-  pe.value = pk && EMPLOYEES.some(function (e) { return e.employeeId === pk; }) ? pk : ''; pe.dataset.gen = String(SESSION_GEN);
-  ptSync();
-  const pts = Object.keys(HOL.partTime);
-  document.getElementById('ptList').textContent = pts.length ? 'Part-Time now: ' + pts.map(function (id) {
-    const e = EMPLOYEES.find(function (x) { return x.employeeId === id; }); return e ? e.name + ' (' + id + ')' : id; }).join(', ') : 'Nobody is marked Part-Time.';
+  ptRender_();
   const hb = document.querySelector('#hhTable tbody'); hb.innerHTML = '';
   if (!HOL.batches.length) emptyRow(hb, 8, 'No holiday has been processed yet.');
   const names = {}; HOL.holidays.forEach(function (h) { names[h.holidayId] = h.date + ' — ' + h.name; });
@@ -1830,13 +1823,31 @@ async function holCancel(h) {
   if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
   setMsg('holCalMsg', true, 'Holiday cancelled.'); await loadHolidays();
 }
+// V76: the two Part-Time lists, drawn with the holiday data and again when the employee list arrives (after login)
+function ptRender_() {
+  // PT PICKER (V1): the list starts blank — an employee must be chosen by hand; a choice is kept only within the same login
+  const pe = document.getElementById('ptEmp'), pk = pe.dataset.gen === String(SESSION_GEN) ? pe.value : ''; pe.innerHTML = '';
+  pe.appendChild(el('option', { value: '', text: 'Select employee...' }));
+  // V76: only Active employees who are not Part-Time yet can be marked
+  const canMark = EMPLOYEES.filter(function (e) { return e.status === 'Active' && !HOL.partTime[e.employeeId]; });
+  canMark.forEach(function (e) { pe.appendChild(el('option', { value: e.employeeId, text: e.name + ' (' + e.employeeId + ')' })); });
+  pe.value = pk && canMark.some(function (e) { return e.employeeId === pk; }) ? pk : ''; pe.dataset.gen = String(SESSION_GEN);
+  // V76: Remove only from the registered Part-Time list
+  const pc = document.getElementById('ptCur'), ck = pc.dataset.gen === String(SESSION_GEN) ? pc.value : ''; pc.innerHTML = '';
+  const ptIds = Object.keys(HOL.partTime), ptName = function (id) { const e = EMPLOYEES.find(function (x) { return x.employeeId === id; }); return e ? e.name + ' (' + id + ')' : id; };
+  pc.appendChild(el('option', { value: '', text: ptIds.length ? 'Select Part-Time employee...' : 'No Part-Time employees registered.' }));
+  ptIds.forEach(function (id) { pc.appendChild(el('option', { value: id, text: ptName(id) })); });
+  pc.disabled = !ptIds.length; pc.value = ck && ptIds.indexOf(ck) !== -1 ? ck : ''; pc.dataset.gen = String(SESSION_GEN);
+  ptSync();
+  document.getElementById('ptList').textContent = ptIds.length ? 'Part-Time now: ' + ptIds.map(ptName).join(', ') : 'No Part-Time employees registered.';
+}
 // PT PICKER (V1): Mark / Remove Part-Time only with an employee chosen, one save at a time (PT_SAVING), and only for the
 // list filled under THIS login (dataset.gen = SESSION_GEN); the end of a session clears it at once (ptReset_ from endSession)
 let PT_SAVING = false;
-function ptSync() { const off = !document.getElementById('ptEmp').value || PT_SAVING; document.getElementById('ptMark').disabled = off; document.getElementById('ptRemove').disabled = off; }
-function ptReset_() { const pe = document.getElementById('ptEmp'); pe.value = ''; pe.dataset.gen = ''; document.getElementById('ptReason').value = ''; ptSync(); }
+function ptSync() { document.getElementById('ptMark').disabled = !document.getElementById('ptEmp').value || PT_SAVING; document.getElementById('ptRemove').disabled = !document.getElementById('ptCur').value || PT_SAVING; } // V76
+function ptReset_() { const pe = document.getElementById('ptEmp'), pc = document.getElementById('ptCur'); pe.value = ''; pe.dataset.gen = ''; pc.value = ''; pc.dataset.gen = ''; document.getElementById('ptReason').value = ''; ptSync(); }
 async function setPartTimeUI(on) {
-  const pe = document.getElementById('ptEmp'), id = pe.value, why = document.getElementById('ptReason').value.trim();
+  const pe = document.getElementById(on ? 'ptEmp' : 'ptCur'), id = pe.value, why = document.getElementById('ptReason').value.trim(); // V76: Remove uses the Part-Time list
   if (!id || PT_SAVING || pe.dataset.gen !== String(SESSION_GEN)) return; // nothing chosen, a save already on its way, or a list from an earlier login
   PT_SAVING = true; ptSync();
   try {
@@ -2032,6 +2043,7 @@ async function loadEmployees(pre) {
     Array.from(new Set(EMPLOYEES.map(function (e) { return String(e.department || ''); }).filter(Boolean))).sort()
       .forEach(function (d) { ds.appendChild(el('option', { value: d, text: d })); });
     ds.value = keep;
+    if (HOL) ptRender_(); // V76: Part-Time lists need the employee names
   }
   return result;
 }
@@ -3051,6 +3063,11 @@ window.addEventListener('beforeprint', fitPrintPages);
 window.addEventListener('afterprint', unfitPrintPages);
 // TCEDIT: the card shows NET corrections (insert-then-remove pairs hidden, an edit = one line).
 // "Show full history" (screen only) lists every step; the AuditLog itself is never changed.
+// V76: an edit that kept the time can only have changed Clock IN <-> Clock OUT (display only; the AuditLog is unchanged)
+function corrTypeOnlyFrom_(c) {
+  const flip = { IN: 'OUT', OUT: 'IN' }[c.direction];
+  return c.type === 'EDITED' && c.fromTime && flip && Math.floor(Date.parse(c.fromTime) / 60000) === Math.floor(Date.parse(c.punchTime) / 60000) ? flip : null;
+}
 function corrTable(list, full) {
   const t = el('table');
   t.appendChild(el('thead', null, [el('tr', null, ['Done on', 'Change', 'Punch', 'Reason', 'By'].map(function (h) { return el('th', { text: h }); }))]));
@@ -3058,8 +3075,9 @@ function corrTable(list, full) {
   list.forEach(function (c) {
     const isPaid = c.type === 'PAID_ADDED' || c.type === 'PAID_VOIDED';
     const label = full && c.type === 'VOIDED' ? 'Voided' : (CORR_LABEL[c.type] || c.type);
-    const what = (c.pre && c.type === 'INSERTED' ? 'Pre-entered' : label) + (c.type.indexOf('BREAK') === 0 || isPaid ? '' : ' ' + dirLabel(c.direction).toLowerCase());
-    const punch = isPaid ? c.detail : (c.type === 'EDITED' && c.fromTime ? saipanDateTime(c.fromTime) + ' → ' + saipanTimeOnly(c.punchTime) : saipanDateTime(c.punchTime));
+    const typeFrom = corrTypeOnlyFrom_(c); // V76
+    const what = (c.pre && c.type === 'INSERTED' ? 'Pre-entered' : label) + (c.type.indexOf('BREAK') === 0 || isPaid ? '' : ' ' + (typeFrom ? dirLabel(typeFrom).toLowerCase() + ' → ' : '') + dirLabel(c.direction).toLowerCase());
+    const punch = isPaid ? c.detail : (c.type === 'EDITED' && c.fromTime && !typeFrom ? saipanDateTime(c.fromTime) + ' → ' + saipanTimeOnly(c.punchTime) : saipanDateTime(c.punchTime));
     const tr = addRow(tb, [saipanDateTime(c.doneAt), what, punch, c.reason || '—', c.by],
       c.type === 'VOIDED' || c.type === 'PAID_VOIDED' ? 'void' : '');
     tr.children[3].className = 'why';
@@ -4668,7 +4686,7 @@ function openTcEdit(c, startDate, endDate) {
   TE = { c: c, startDate: startDate, endDate: endDate };
   document.getElementById('tcEditTitle').textContent = 'Edit time — ' + c.name + ' (ID ' + c.employeeId + ')';
   document.getElementById('tcEditSub').textContent = 'Pay period ' + fmt(startDate) + ' – ' + fmt(endDate) +
-    '. Change a time, remove a punch, or add one. The original punch is kept in the history; every change is in the Audit Log.';
+    '. Change a time or type, remove a punch, or add one. The original punch is kept in the history; every change is in the Audit Log.';
   const tb = document.querySelector('#tcEditTable tbody'); tb.innerHTML = '';
   const tz = function (iso) { const d = new Date(iso); return { date: d.toLocaleDateString('en-CA', { timeZone: TZ }), time: d.toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) }; };
   const items = [];
@@ -4681,10 +4699,12 @@ function openTcEdit(c, startDate, endDate) {
     const v = tz(it.iso);
     const d = el('input', { type: 'date', value: v.date, style: 'max-width:150px' }), t = el('input', { type: 'time', value: v.time, style: 'max-width:110px' });
     const rm = el('input', { type: 'checkbox', title: 'Remove this punch' });
-    it.orig = v; it.inputs = { d: d, t: t, rm: rm };
-    const tr = addRow(tb, [shortDate(it.day), dirLabel(it.dir), saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { style: 'display:flex;gap:6px' }, [d, t]), rm]);
-    const mark = function () { tr.style.background = rm.checked ? '#fde8e8' : (d.value !== v.date || t.value !== v.time) ? '#fff7e6' : ''; };
-    d.oninput = t.oninput = rm.onchange = mark;
+    const ty = el('select', { title: 'Punch type', style: 'max-width:120px' }, [el('option', { value: 'IN', text: 'Clock IN' }), el('option', { value: 'OUT', text: 'Clock OUT' })]); // V76
+    ty.value = it.dir;
+    it.orig = v; it.inputs = { d: d, t: t, rm: rm, ty: ty };
+    const tr = addRow(tb, [shortDate(it.day), ty, saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { style: 'display:flex;gap:6px' }, [d, t]), rm]);
+    const mark = function () { tr.style.background = rm.checked ? '#fde8e8' : (d.value !== v.date || t.value !== v.time || ty.value !== it.dir) ? '#fff7e6' : ''; };
+    d.oninput = t.oninput = rm.onchange = ty.onchange = mark;
   });
   TE.items = items;
   document.getElementById('teAddDir').value = ''; document.getElementById('teAddDate').value = startDate; document.getElementById('teAddTime').value = '';
@@ -4700,10 +4720,11 @@ async function saveTcEdit() {
   TE.items.forEach(function (it) {
     const f = it.inputs;
     if (f.rm.checked) changes.push({ kind: 'remove', it: it, text: 'Remove ' + dirLabel(it.dir) + ' ' + saipanTimeOnly(it.iso) + ' (' + shortDate(it.orig.date) + ')' });
-    else if (f.d.value !== it.orig.date || f.t.value !== it.orig.time) {
+    else if (f.d.value !== it.orig.date || f.t.value !== it.orig.time || f.ty.value !== it.dir) {
       if (!f.d.value || !f.t.value) return;
-      changes.push({ kind: 'edit', it: it, date: f.d.value, time: f.t.value,
-        text: dirLabel(it.dir) + ' ' + it.orig.time + ' (' + shortDate(it.orig.date) + ') → ' + f.t.value + ' (' + shortDate(f.d.value) + ')' });
+      const dir = f.ty.value !== it.dir ? f.ty.value : ''; // V76: sent only when the type was changed
+      changes.push({ kind: 'edit', it: it, date: f.d.value, time: f.t.value, dir: dir,
+        text: dirLabel(it.dir) + (dir ? ' → ' + dirLabel(dir) : '') + ' ' + it.orig.time + ' (' + shortDate(it.orig.date) + ') → ' + f.t.value + ' (' + shortDate(f.d.value) + ')' });
     }
   });
   if (teAddDir.value) {
@@ -4723,7 +4744,7 @@ async function saveTcEdit() {
   const savedDates = [];
   for (const x of changes) {
     let r;
-    if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason });
+    if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason, ...(x.dir ? { direction: x.dir } : {}) });
     else if (x.kind === 'remove') r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
     else r = await call('addMissedPunch', { employeeId: TE.c.employeeId, direction: x.dir, date: x.date, time: x.time, reason: reason, venueId: x.venueId });
     if (!r.ok) errs.push(x.text + ': ' + r.error.message);
