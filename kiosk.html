@@ -742,18 +742,20 @@ const KioskSubmission = (function () {
     if (!visible(ctx)) return;
     const title=label(e,p), at=p && p.originalTimestamp || e.at;
     const saved=state==='OFFLINE' || state==='ALREADY_LOCAL';
-    const status=state==='ONLINE'?'ONLINE SUCCESSFUL':state==='OFFLINE'?'OFFLINE SAVED':state.indexOf('ALREADY')===0?'ALREADY SAVED':'NOT CONFIRMED';
+    // V74 (Option C): the green "Attendance Confirmed" appears only after server validation.
+    const status=state==='ONLINE'?'SERVER CONFIRMED':state==='ALREADY_SERVER'?'ALREADY RECORDED':state==='OFFLINE'||state==='ALREADY_LOCAL'?'SAVED OFFLINE — PENDING SYNC':'NOT CONFIRMED';
     let detail;
-    if(state==='ONLINE'||state==='ALREADY_SERVER') detail='Server confirmed. '+fmtTime(at)+'. You do not need to '+title.toLowerCase()+' again.';
-    else if(saved) detail=fmtTime(at)+' — Locally recorded time. Your attendance was saved on this kiosk. It will be sent automatically when the internet connection returns. Waiting for server validation. DO NOT '+title+' AGAIN.';
+    if(state==='ONLINE') detail=title+' at '+fmtTime(at)+' — confirmed by the server. You do not need to '+title.toLowerCase()+' again.';
+    else if(state==='ALREADY_SERVER') detail='Your '+title+' at '+fmtTime(at)+' was already recorded and confirmed. Nothing new was saved. You do not need to '+title.toLowerCase()+' again.';
+    else if(saved) detail=title+' at '+fmtTime(at)+' — saved on this tablet. It will be sent automatically when the connection returns and checked by the server. DO NOT '+title+' AGAIN.';
     else detail=fmtTime(at)+' — Attempted time, not a confirmed punch. We could not verify that this attendance was recorded or safely saved. Please contact your GGM/AGGM with this time. Do not make another attempt until its status is checked.';
-    const heading=title+(state==='ONLINE'?' CONFIRMED':state==='OFFLINE'?' SAVED':state.indexOf('ALREADY')===0?' ALREADY SAVED':' NOT CONFIRMED');
+    const heading=state==='ONLINE'?'Attendance Confirmed':state==='ALREADY_SERVER'?'Already Recorded — '+title:saved?'Saved Offline — Pending Sync':title+' NOT CONFIRMED';
     showResult(state==='ONLINE'?'in':saved?'offline':state==='ALREADY_SERVER'?'in':'error',state==='UNKNOWN'?'!':'✓',heading,'',detail,false);
     $('resultBox').dataset.confirmation=status;
     $('resultState').textContent=status; $('resultState').classList.remove('hidden');
     $('resultBtn').textContent='Next employee'; $('resultBtn').classList.remove('hidden');
     clearTimeout(resultTimer); resultTimer=setTimeout(resetKiosk,state==='ONLINE'?3500:state==='UNKNOWN'?10000:8000);
-    speak(state==='UNKNOWN'?'Please contact your G G M or A G G M':saved?'Saved on this kiosk. Do not '+title.toLowerCase()+' again.':SAY_OK);
+    speak(state==='UNKNOWN'?'Please contact your G G M or A G G M':saved?'Saved on this kiosk. Do not '+title.toLowerCase()+' again.':state==='ALREADY_SERVER'?'Already recorded. You do not need to '+title.toLowerCase()+' again.':SAY_OK); // V74
   }
   async function update(id,patch) { return KioskIntentStore.update(id,patch); }
   function completeQueued(e) {
@@ -782,6 +784,7 @@ const KioskSubmission = (function () {
     try { await remember(e,p); } catch(_) {}
     if(e.action!=='BREAK') {
       await KioskIntentStore.withData(()=>editList(LS.queue,q=>dropFrom(q,e.id))).catch(()=>{});
+      if(ctx.photoQueued)await ctx.photoQueued; // V73 step 3: the photo stored during the request comes first
       if(ctx.photo)await queuePhoto(ctx.photo,p.rawId,e.id,ctx.c).catch(()=>{});
       await Promise.resolve(linkPhoto(e.id,p.rawId,ctx.c)).catch(()=>{});
     }
@@ -790,8 +793,10 @@ const KioskSubmission = (function () {
   }
   async function offline(ctx,e,body) {
     if(e.action==='BREAK') { await update(e.id,{status:'UNCERTAIN'}).catch(()=>{}); render(ctx,e,'UNKNOWN'); return; }
+    if(ctx.photoQueued)await ctx.photoQueued; // V73 step 3
     const old=completeQueued(e);
-    if(old && await queuedPinMatches(old,body.pin)) { await update(e.id,{status:'LOCAL_QUEUED'}).catch(()=>{}); render(ctx,e,'ALREADY_LOCAL'); return; }
+    // V73 step 4: our own write-ahead copy is the offline save of THIS attempt ("SAVED"), not an earlier one.
+    if(old && await queuedPinMatches(old,body.pin)) { await update(e.id,{status:'LOCAL_QUEUED'}).catch(()=>{}); render(ctx,e,ctx.writeAhead?'OFFLINE':'ALREADY_LOCAL'); return; }
     const sealed=await within(pinVault.seal(body.pin),VAULT_WAIT_MS);
     const good=typeof sealed==='string'&&sealed!=='TIMEOUT';
     let id='';
@@ -855,15 +860,33 @@ const KioskSubmission = (function () {
     await update(e.id,{status:'IN_FLIGHT'});
     // A storage await may outlive the PIN screen. Never capture a later person's frame.
     if(!visible(ctx)) { await update(e.id,{status:'RESERVED'});return; }
-    if(e.action!=='BREAK'&&!resumeChoice) { ctx.photo=capturePhoto(); if(ctx.photo)await queuePhoto(ctx.photo,null,e.id,ctx.c).catch(()=>{}); }
+    // V73 step 4 (write-ahead): IN/OUT is saved on the kiosk (sealed PIN, same localId) BEFORE it is sent, so power or
+    // page loss cannot lose it. The server stays the authority: idempotency by localId means a later sync never duplicates.
+    if(e.action!=='BREAK') {
+      const sealed=await within(pinVault.seal(body.pin),VAULT_WAIT_MS);
+      if(typeof sealed==='string'&&sealed!=='TIMEOUT') {
+        try { ctx.writeAhead=!!(await KioskIntentStore.withData(()=>queueOffline({localId:e.id,employeeId:e.employeeId,at:e.at,pinSealed:sealed,terminalId:e.terminalId,url:e.url,intentVersion:1,anchorLocalId:e.anchorLocalId,holdUntil:Date.now()+WRITE_AHEAD_HOLD_MS},e.action))); } catch(_) {}
+      }
+    }
+    // V73 step 3 (send first): the frame is taken now (this person), but storing it runs while the request is out.
+    if(e.action!=='BREAK'&&!resumeChoice) { ctx.photo=capturePhoto(); if(ctx.photo)ctx.photoQueued=Promise.resolve(queuePhoto(ctx.photo,null,e.id,ctx.c)).catch(()=>{}); }
     if(!visible(ctx)) { await update(e.id,{status:'RESERVED'});return; }
+    const dropWriteAhead=()=>ctx.writeAhead?KioskIntentStore.withData(()=>editList(LS.queue,q=>dropFrom(q,e.id))).catch(()=>{}):null;
+    // V74 (Option C): as soon as the punch is durably saved on the tablet, say so (never "confirmed" until the server says so).
+    if(ctx.writeAhead&&visible(ctx)){ $('msgPin').className='msg info'; $('msgPin').textContent='Saved on Tablet — Waiting for Server…'; }
+    const slowNote=null;
     let result;
     try {
-      result=await api(e.action==='IN'?'clockIn':e.action==='OUT'?'clockOut':'kioskBreakAction',body,undefined,e.url);
+      body.timing=1; // V73 step 0
+      const tSend=performance.now();
+      try { result=await api(e.action==='IN'?'clockIn':e.action==='OUT'?'clockOut':'kioskBreakAction',body,PUNCH_TIMEOUT_MS,e.url); }
+      finally { clearTimeout(slowNote); }
+      if(ctx.t0!==undefined) { const now=performance.now(); lastPunchPerf={action:e.action,prepMs:Math.round(tSend-ctx.t0),totalMs:Math.round(now-ctx.t0),...(result&&result._timing&&typeof result._timing.totalMs==='number'?{serverMs:result._timing.totalMs}:{})}; }
       if(!result||typeof result.ok!=='boolean')throw new NetworkError('Invalid response');
       if(!result.ok) {
         const code=result.error&&result.error.code;
         if(!code||['INTERNAL_ERROR','BUSY'].includes(code))throw new NetworkError('Unconfirmed response');
+        await dropWriteAhead(); // a definite "no" from the server: the kiosk copy must never be sent later
         await update(e.id,{status:code==='NO_CLOCK_IN_CONFIRM'?'CHOICE':'REFUSED',reasonCode:code});
         if(visible(ctx)) { if(code==='NO_CLOCK_IN_CONFIRM'){noInPin=ctx.pin;showNoInConfirm(result.error.message);}else handleError(result.error); }
         return;
@@ -882,6 +905,7 @@ const KioskSubmission = (function () {
       if(e.action==='BREAK') { if(result.data.intentVersion!==1||!p.ack)throw new NetworkError('Unsupported break acknowledgment'); }
       else if(!await (canonical ? verifyPunchAck : verifyFreshPunchAck)({...body,localId:proofEvent.id},e.action,{ok:true,data:p},ctx.c))throw new NetworkError('Unconfirmed stored row');
       if(canonical) {
+        await dropWriteAhead(); // the server already holds this attendance under its first ID
         await update(e.id,{status:'SERVER_CONFIRMED',receipt:{localId:p.ack.localId,rawId:p.rawId,direction:p.direction,at:p.originalTimestamp,terminalId:p.terminalId}}).catch(()=>{});
         // The fresh duplicate attempt's photo must never replace evidence on the canonical event.
         render(ctx,e,'ALREADY_SERVER',p);return;
@@ -903,7 +927,7 @@ const KioskSubmission = (function () {
   async function submit(action,op,extra) {
     if(busy)return;
     if(pin.length!==4 && !(extra&&extra.pinValue)) { setPinMsg('PIN must be 4 digits.','err');return; }
-    const ctx={flow:KIOSK_FLOW,emp:employeeId,mode:mode,c:getConfig(),pin:extra&&extra.pinValue||pin,at:new Date(nowMs()).toISOString()};
+    const ctx={flow:KIOSK_FLOW,emp:employeeId,mode:mode,c:getConfig(),pin:extra&&extra.pinValue||pin,at:new Date(nowMs()).toISOString(),t0:performance.now()}; // t0: V73 step 0
     busy=true;
     $('keypadPin').classList.add('disabled');$('msgPin').className='msg info';$('msgPin').textContent='Processing…';
     const fallback={action,op,at:ctx.at};
@@ -912,6 +936,13 @@ const KioskSubmission = (function () {
       const queued=loadList(LS.queue);if(!queued.ok)throw new Error('Unreadable pending attendance');
       await KioskIntentStore.importQueued(ctx.c,queued.list);
       const prior=await KioskIntentStore.head(ctx.c,ctx.emp);
+      // V74: BREAK while this kiosk's own confirmed receipt says the employee is on break / paused -> choose first, one request.
+      const rc=prior&&prior.action==='BREAK'&&prior.status==='SERVER_CONFIRMED'&&prior.receipt;
+      if(action==='BREAK'&&op==='AUTO'&&rc&&['BREAK_START','BREAK_PAUSE'].includes(rc.direction)&&Date.now()-Date.parse(rc.at)<16*3600000) {
+        if(visible(ctx)){ breakPin=ctx.pin; const on=rc.direction==='BREAK_START';
+          showBreakChoices({name:'Employee '+ctx.emp,state:on?'BREAK':'PAUSED',remainingSec:null,since:rc.at,options:on?['PAUSE','END']:['RESUME','END']}); }
+        return;
+      }
       const anchor=prior&&prior.action!==action&&(prior.status==='SERVER_CONFIRMED'||prior.status==='LOCAL_QUEUED')?prior.receipt&&prior.receipt.localId||prior.id:null;
       const resumeChoice=extra&&extra.confirmNoIn===true&&prior&&prior.action==='OUT'&&action==='OUT'&&prior.status==='CHOICE'&&prior.reasonCode==='NO_CLOCK_IN_CONFIRM';
       const reserved=resumeChoice?{event:prior,reused:true}:await KioskIntentStore.reserve({owner:ctx.c,employeeId:ctx.emp,action,op,at:ctx.at,...(anchor?{anchorLocalId:anchor}:{})});
@@ -1001,9 +1032,17 @@ function pillFor(id) {
 // ============================================================================
 // Flow: ID -> PIN -> action
 // ============================================================================
+let lastWarmAt = 0;
+function warmServer() { // V74: one light, authenticated, read-only request; at most every 20 s; never blocks or alters a punch
+  if (!navigator.onLine || Date.now() - lastWarmAt < 20000) return;
+  lastWarmAt = Date.now();
+  const c = getConfig();
+  api('kioskPing', { terminalId: c.terminalId, terminalSecret: c.secret }, 8000).catch(function () {});
+}
 function startEntry(m) {
   if (!isConfigured()) { speak(SAY_ERR); showResult('error', '⚠', 'Kiosk not set up', '', 'Please ask an Admin to set up this kiosk.', true); return; }
   KIOSK_FLOW++; mode = m; employeeId = '';
+  warmServer(); // V74: wake Apps Script while the employee types ID + PIN (measured: first request after idle 3.1 s -> ~2.1 s)
   pillFor('pillEmpId'); renderEmpId(); $('msgEmpId').textContent = '';
   buildKeypad('keypadEmpId',
     function (d) { if (employeeId.length < 4) { employeeId += d; renderEmpId(); if (employeeId.length === 4) submitEmpId(); } },
@@ -1093,7 +1132,7 @@ function handleError(err) {
   const titles = { ALREADY_IN: 'Already clocked IN', NOT_IN: 'Not clocked IN', DUPLICATE: 'Already recorded', PIN_LOCKED: 'Temporarily locked',
     INACTIVE: 'Account inactive', TERMINAL_INVALID: 'Kiosk not authorized', ON_BREAK: 'You are on break', BREAK_AUTO: 'Break is automatic',
     BREAK_NONE: 'No break to record', NOT_ON_BREAK: 'Not on break', ALREADY_ON_BREAK: 'Already on break' };
-  showResult('error', code === 'DUPLICATE' ? '✓' : '⚠', titles[code] || 'Could not complete', '', msg, true);
+  showResult('error', code === 'DUPLICATE' ? '✓' : '⚠', titles[code] || 'Could not complete', '', code === 'DUPLICATE' ? msg : 'Not recorded — ' + msg, true); // V74: the reason is shown; the server keeps an audit row
 }
 
 // ============================================================================
@@ -1149,6 +1188,11 @@ function showBreakChoices(d) {
   $('brkState').textContent = states[d.state] || '';
   const t0 = Date.now();
   const paint = function () {
+    if (d.remainingSec === null || d.remainingSec === undefined) { // V74: chosen on the kiosk before asking the server
+      $('brkTime').textContent = ''; $('brkTime').className = 'brk-time';
+      $('brkSub').textContent = (d.state === 'BREAK' ? 'On break since ' : 'Break paused since ') + fmtTime(d.since);
+      return;
+    }
     const left = d.state === 'BREAK' ? d.remainingSec - (Date.now() - t0) / 1000 : d.remainingSec;
     const el = $('brkTime');
     el.textContent = (left < 0 ? '+' : '') + fmtLeft(left);
@@ -1672,6 +1716,17 @@ async function verifyPunchAck(p, dir, r, who) {
 }
 function queueBelongsHere(x, c) { return !!(x.terminalId && x.url && x.terminalId === c.terminalId && x.url === c.url); }
 const VAULT_WAIT_MS = 5000; // the longest the kiosk waits for the PIN vault
+// V73 step 5: a punch waits at most 12 s for the server; it is already saved on the kiosk (step 4), so it syncs later.
+const PUNCH_TIMEOUT_MS = 12000;
+// V73 step 4: a write-ahead copy is not synced while its own request may still be running.
+const WRITE_AHEAD_HOLD_MS = 20000;
+// V73 step 6: punches always win storage — new photos are skipped once the photo backlog reaches ~1.5 MB (~55 photos).
+const PHOTO_Q_MAX_CHARS = 1500000;
+let lastPunchPerf = null; // V73 step 0
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {} // V73 step 6
+// V74: offline kiosk page — a service worker keeps a copy of this page so the kiosk opens after a restart without internet.
+// It never caches API calls, PINs or the punch queue (see sw.js).
+try { if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) {}
 const EVIDENCE_MAX = 2000;  // refused / unsaved punches kept on this kiosk until an Admin clears the reviewed list (about 0.5 MB)
 // the value of p, or 'TIMEOUT' after ms (null if p fails) — never waits for ever
 function within(p, ms) {
@@ -1687,6 +1742,7 @@ function queueOffline(punch, dir) {
   const item = { localId: localId, direction: dir, originalTimestamp: punch.at || new Date(nowMs()).toISOString(), // AUDIT2 B1: corrected time
     employeeId: punch.employeeId, pinSealed: punch.pinSealed || '', terminalId: punch.terminalId || getConfig().terminalId, url: punch.url || getConfig().url, proto: 2 };
   if (punch.intentVersion === 1) { item.intentVersion = 1; if (punch.anchorLocalId) item.anchorLocalId = punch.anchorLocalId; }
+  if (punch.holdUntil) item.holdUntil = punch.holdUntil; // V73 step 4: write-ahead copy
   const saved = editList(LS.queue, function (q) { if (!q.some(function (x) { return x.localId === localId; })) q.push(item); });
   updateStatusBar();
   return saved ? localId : '';
@@ -1767,6 +1823,7 @@ async function syncQueueLegacy_() {
     for (const item of readQueue(LS.queue)) {
       if (!queueBelongsHere(item, c)) continue; // unbound legacy or another setup: evidence retained, never redirected
       if (wait[item.employeeId]) continue;
+      if (item.holdUntil && item.holdUntil > Date.now()) { wait[item.employeeId] = 1; continue; } // V73 step 4: its own request may still be running
       if (item.refused) { if (!await moveToEvidence(item, item.refused.reason, item.refused.code)) break; continue; } // V61SAFE K5: never sent again
       let pin = item.pin; // a V61 punch whose PIN could not be encrypted yet: sent as on V61
       if (!pin) {
@@ -1779,7 +1836,7 @@ async function syncQueueLegacy_() {
       let result;
       try {
         result = await api('syncOfflinePunch', { localId: item.localId, direction: item.direction, originalTimestamp: item.originalTimestamp,
-          employeeId: item.employeeId, pin: pin, method: 'PIN', terminalId: item.terminalId, terminalSecret: c.secret, ack: 2, ...(item.intentVersion === 1 ? { intentVersion: 1, intentOp: item.direction, ...(item.anchorLocalId ? { anchorLocalId: item.anchorLocalId } : {}) } : {}) }, undefined, item.url);
+          employeeId: item.employeeId, pin: pin, method: 'PIN', terminalId: item.terminalId, terminalSecret: c.secret, ack: 2, ...(item.intentVersion === 1 ? { intentVersion: 1, intentOp: item.direction, postCommitAck: 1, ...(item.anchorLocalId ? { anchorLocalId: item.anchorLocalId } : {}) } : {}) }, PUNCH_TIMEOUT_MS, item.url); // V73 steps 5/7
       } catch (e) { break; }
       if (!result || typeof result.ok !== 'boolean' || (!result.ok && (!result.error || typeof result.error.code !== 'string'))) break;
       const code = !result.ok && result.error ? result.error.code : '';
@@ -1795,7 +1852,11 @@ async function syncQueueLegacy_() {
         result = { ok: true, data: p };
       }
       if (result.data && result.data.voidFlag === true) break;
-      if (!await verifyPunchAck(proofItem, item.direction, result, c)) break; // unknown/mismatched acknowledgment keeps evidence and photo
+      // V73 step 7: the server's commit proof (commitAck) settles it in one request; otherwise the separate check runs as before.
+      const proofOk = proofItem.localId === item.localId && item.intentVersion === 1
+        ? await verifyFreshPunchAck(Object.assign({}, proofItem, { postCommitAck: 1 }), item.direction, result, c)
+        : await verifyPunchAck(proofItem, item.direction, result, c);
+      if (!proofOk) break; // unknown/mismatched acknowledgment keeps evidence and photo
       if (proofItem.localId === item.localId && result.data && result.data.rawId) await Promise.resolve(linkPhoto(item.localId, result.data.rawId, c)).catch(function () {});
       if (typeof KioskSubmission !== 'undefined') await KioskSubmission.syncSaved(item, result.data, proofItem.localId !== item.localId); // PHOTO
       const remove = function () { return editList(LS.queue, function (q) { dropFrom(q, item.localId); }); };
@@ -1846,7 +1907,8 @@ async function refreshHome() {
   const c = getConfig();
   const t0 = Date.now();
   try {
-    const r = await api('kioskHome', { terminalId: c.terminalId, terminalSecret: c.secret }, 20000);
+    const perf = lastPunchPerf; lastPunchPerf = null; // V73 step 0: report the last punch's kiosk-side timing once
+    const r = await api('kioskHome', { terminalId: c.terminalId, terminalSecret: c.secret, ...(perf ? { perf: perf } : {}) }, 20000);
     const t1 = Date.now();
     if (!r.ok && r.error && r.error.code === 'UNKNOWN_ACTION') { // server not updated yet: use the old requests
       homeLegacy = true; homeBusy = false; return refreshHome();
@@ -2057,6 +2119,7 @@ function queuePhotoLegacy_(image, rawId, localId, originalConfig) {
   const c = originalConfig || getConfig();
   const saved = editList(PHOTO_Q, function (q) {
     if (localId && q.some(function (x) { return x.localId === localId && queueBelongsHere(x, c); })) return;
+    if (JSON.stringify(q).length > PHOTO_Q_MAX_CHARS) return; // V73 step 6: backlog full — skip this photo, keep room for punches
     // Pending photo evidence is kept until an index-verified upload; never expire or truncate it.
     q.push({ rawId: rawId || '', localId: localId || '', image: image, at: Date.now(), terminalId: c.terminalId, url: c.url });
   });
