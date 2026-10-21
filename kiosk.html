@@ -691,7 +691,7 @@ const KioskIntentStore=(function(){
       const events=t.objectStore('events'),scopes=t.objectStore('scopes'),k=key(o,eid),q=scopes.get(k);
       q.onsuccess=()=>{const prior=q.result?events.get(q.result.id):null;
         const proceed=old=>{
-          const equivalent=old&&old.action===input.action&&(pending.has(old.status)||(old.status==='SERVER_CONFIRMED'&&(input.action!=='BREAK'||(input.op!=='AUTO'&&old.op===input.op))));
+          const equivalent=intentEquivalent_(old,input,pending);
           if(equivalent&&(!input.forceNew||(input.replaceId!==undefined&&old.id!==input.replaceId))){set({event:old,reused:true});return;}
           room(t,1,()=>{
             const now=new Date().toISOString(),event={id:makeId(),...o,employeeId:eid,action:input.action,op:input.op,at,status:'RESERVED',createdAt:now,updatedAt:now};
@@ -740,6 +740,7 @@ const KioskSubmission = (function () {
   function visible(ctx) { const c=getConfig(); return ctx.flow === KIOSK_FLOW && ctx.emp === employeeId && ctx.mode === mode && ownerKey(c) === ownerKey(ctx.c); }
   function render(ctx,e,state,p) {
     if (!visible(ctx)) return;
+    if(state==='ONLINE'&&p&&p.alert){ showWarning(Object.assign({ employeeId: e.employeeId, direction: e.action }, p)); return; } // V78: e.g. missed clock-out on the previous shift
     const title=label(e,p), at=p && p.originalTimestamp || e.at;
     const saved=state==='OFFLINE' || state==='ALREADY_LOCAL';
     // V74 (Option C): the green "Attendance Confirmed" appears only after server validation.
@@ -1345,10 +1346,14 @@ function showResult(cls, icon, title, name, detail, needsTap) {
 let warnTimer = null;
 function showWarning(data) {
   const a = data.alert;
-  $('warnTitle').textContent = a.type === 'LONG_SHIFT' ? 'Very long shift' : a.type === 'NO_CLOCK_IN' ? 'No clock-in found' : 'Missed clock-out';
+  $('warnTitle').textContent = a.type === 'LONG_SHIFT' ? 'Very long shift' : a.type === 'NO_CLOCK_IN' ? 'No clock-in found' : 'Missing Clock-Out';
   $('warnWho').textContent = data.employeeName || ('Employee ' + data.employeeId);
   $('warnDone').textContent = '✓ Clocked ' + data.direction + ' at ' + fmtTime(data.originalTimestamp);
   $('warnText').textContent = staffText(a.message); // V61SAFE K7
+  if (a.type === 'MISSED_OUT' && data.direction === 'IN') { // V78: the new clock-in is saved; the previous shift needs a manager correction
+    $('warnDone').textContent = '✓ CLOCK-IN SUCCESSFUL — Your clock-in has been recorded successfully. (' + fmtTime(data.originalTimestamp) + ')';
+    $('warnText').textContent = 'You forgot to clock out from your previous shift. Please inform the GGM/AGGM to correct your previous Time Card.';
+  }
   $('flow').classList.add('hidden');
   $('warnOverlay').classList.remove('hidden');
   playAlarm(); setTimeout(function () { speak('Thank you. Please inform your G G M or A G G M.'); }, 2700); // V61SAFE K7: spelled out for the voice
@@ -1713,6 +1718,16 @@ async function verifyPunchAck(p, dir, r, who) {
       localId: p.localId, employeeId: p.employeeId, direction: dir, rawId: r.data.rawId }, undefined, p.url || who.url);
     return punchAckMatches(p, dir, v) && v.data.rawId === r.data.rawId;
   } catch (e) { return false; } // old server or lost verification: retain original evidence
+}
+// V78: is this tap the SAME attempt as the employee's last one on this kiosk? An unfinished save is always resumed.
+// A confirmed Clock IN / OUT counts as "already recorded" only for 16 h (the server's open-shift limit, OPEN_SHIFT_ALERT_HOURS);
+// after that it is a new shift: it is sent, and the server records it and flags the missing clock-out (no time is invented).
+function intentEquivalent_(old, input, pending) {
+  if (!old || old.action !== input.action) return false;
+  if (pending.has(old.status)) return true;
+  if (old.status !== 'SERVER_CONFIRMED') return false;
+  if (input.action === 'BREAK') return input.op !== 'AUTO' && old.op === input.op; // unchanged
+  return Date.parse(input.at) - Date.parse(old.at) < 16 * 3600000;
 }
 function queueBelongsHere(x, c) { return !!(x.terminalId && x.url && x.terminalId === c.terminalId && x.url === c.url); }
 const VAULT_WAIT_MS = 5000; // the longest the kiosk waits for the PIN vault
