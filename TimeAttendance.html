@@ -1486,6 +1486,7 @@ async function call(action, payload, opts) {
   if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') { // only the CURRENT session's (stale() above)
     endSession(result.error.message || 'Session expired. Please log in again.');
   }
+  if (result.ok && !READ_ACTIONS.test(action)) TC_DIRTY = true; // V78: a save may change time cards
   return result;
 }
 
@@ -1971,10 +1972,17 @@ const TAB_LOADERS = {
     let had = false;
     try { had = !!sessionStorage.getItem('admin_tc_state'); } catch (e) {}
     if (!had) return;
+    if (!tcNeedsReload_(document.getElementById('reportOut').children.length > 0, TC_DIRTY, TC_LOADED_AT, Date.now())) return; // V78: no request
     restoreReportState(!document.getElementById('reportOut').children.length);
     return loadReport();
   }
 };
+// V78: Time Cards shown less than 2 minutes ago are kept when you come back, unless something was saved since
+// (any successful save marks them stale). F5 / the menu refresh always loads fresh.
+let TC_DIRTY = false, TC_LOADED_AT = 0;
+function tcNeedsReload_(shown, dirty, loadedAt, now) {
+  return !shown || dirty || now - loadedAt >= 120000;
+}
 function showTab(name, noLoad) {
   if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); }
   try { sessionStorage.setItem('admin_tab', name); } catch (e) {}
@@ -2646,6 +2654,7 @@ async function loadReport() {
   renderCards_(out, result.data, seq, function () {
     document.getElementById('printBtn').disabled = false;
     saveReportState(result.data);
+    TC_DIRTY = false; TC_LOADED_AT = Date.now(); // V78
     finishPhotoRefresh_('reportOut', photoRefresh, true); // PHOTO: rendering is complete before recovery
   });
   return seq; // A successful request marker; callers must still check drawing and cancellation.
