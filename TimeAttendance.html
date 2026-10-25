@@ -151,6 +151,21 @@
 
   /* ---- time card report ---- */
   .period-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* V79 UI: Time Cards menu in 5 numbered steps */
+  .tc-steps { display: grid; gap: 10px; margin-top: 14px; }
+  .tc-step { display: flex; gap: 14px; align-items: flex-start; background: #f6f8fc; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tc-num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: #1f4e9c; color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  .tc-body { flex: 1; min-width: 0; }
+  .tc-body h3 { margin: 4px 0 8px; font-size: 15px; color: var(--navy); }
+  .tc-body h3 label { font-size: inherit; color: inherit; margin: 0; }
+  .tc-body > .sub { margin: -4px 0 8px; font-size: 12px; }
+  .tc-row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+  .tc-row > div:has(> select) { flex: 1 1 200px; max-width: 320px; }
+  .tc-row .period-btns + .sub { align-self: center; }
+  .tc-or { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--muted); }
+  .tc-or::before, .tc-or::after { content: ''; flex: 1; border-top: 1px solid #d6dbe6; }
+  .tc-tip { flex: 1 1 320px; margin: 0; font-size: 12px; color: #3b475e; background: #eaf1fb; border-radius: 8px; padding: 8px 12px; }
+  @media (max-width: 640px) { .tc-step { padding: 12px; gap: 10px; } .tc-row > div:has(> select) { max-width: none; } }
   .timecard { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 22px; margin-top: 20px; }
   .tc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; border-bottom: 2px solid var(--navy); padding-bottom: 12px; }
   .tc-title { font-size: 22px; color: #1f4e9c; font-weight: 600; }
@@ -273,6 +288,10 @@
     @page { size: letter portrait; margin: 12mm; }
     /* A1 (V1): cards still being drawn are never printed (also Ctrl+P / browser menu) — only this notice */
     #reportOut.tc-drawing > * { display: none !important; }
+    .timecard[hidden] { display: none !important; }
+    /* V79: Print by Department / Page 1 only */
+    #reportOut.p1only .tc-page2, #reportOut.p1only .tc-photos { display: none !important; }
+    .timecard.tc-last-shown { page-break-after: auto; break-after: auto; }
     #reportOut.tc-drawing::before { content: 'Time cards are still loading. Wait until every card is shown, then print again.';
       display: block; font-size: 16px; font-weight: 700; padding: 24px 0; }
   }
@@ -666,31 +685,62 @@
       </div>
       <div class="block no-print" id="livePanel">
         <h2>Time cards</h2>
-        <p class="sub">Printable IN/OUT record per employee. Weeks run Sunday to Saturday; hours over 40 in a week (after breaks) are overtime. Current and Previous pay periods are live; older periods are in <b>Archived Time Cards</b>.</p>
-        <div class="grid">
-          <div class="full">
-            <label for="repSearch">Employee (leave empty for all employees)</label>
+        <p class="sub">View and print IN/OUT records per employee. Weeks run Sunday to Saturday; hours over 40 in a week (after breaks) are overtime. Current and Previous pay periods are live; older periods are in <b>Archived Time Cards</b>.</p>
+        <div class="tc-steps">
+          <div class="tc-step"><span class="tc-num">1</span><div class="tc-body">
+            <h3>Select Employees</h3>
+            <p class="sub">Search for one employee or filter employees by position and venue.</p>
+            <label for="repSearch">Search by Employee Name or ID</label>
             <div class="picker">
-              <input id="repSearch" placeholder="All employees — or type a name / ID" autocomplete="off">
+              <input id="repSearch" placeholder="Search employee name or enter Employee ID…" autocomplete="off">
               <div class="picker-list" id="repSearchList"></div>
             </div>
-          </div>
-          <div class="full"><label>Pay period</label>
-            <div class="period-btns">
-              <button class="btn btn-secondary btn-sm" onclick="setPeriod(0)">Current pay period</button>
-              <button class="btn btn-secondary btn-sm" onclick="setPeriod(-1)">Previous pay period</button>
+            <div class="tc-or">OR FILTER BY POSITION AND VENUE</div>
+            <div class="grid">
+              <div><label for="repPos">Position</label>
+                <select id="repPos" onchange="tcFilterChanged_(this)"><option value="">Select position…</option></select></div>
+              <div><label for="repVenue">Venue</label>
+                <select id="repVenue" onchange="tcFilterChanged_(this)"><option value="">Select venue…</option></select></div>
             </div>
-            <div class="sub" id="liveRangeNote" style="margin:6px 0 0;font-size:12px"></div>
-          </div>
-          <div><label for="repStart">From</label><input id="repStart" type="date"></div>
-          <div><label for="repEnd">To</label><input id="repEnd" type="date"></div>
-        </div>
-        <div class="actions">
-          <button class="btn btn-primary" onclick="run(this, loadReport)">Show time cards</button>
-          <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
-          <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;margin-left:6px"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
+            <div class="tc-row" style="justify-content:space-between;margin-top:12px">
+              <div><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:0"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)" style="width:auto"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
+                <div class="sub" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div></div>
+              <div style="text-align:right"><button class="btn btn-secondary btn-sm" id="repReset" onclick="resetTcEmployeeFilters_()">Reset Employee Filters</button>
+                <div class="sub" style="margin:4px 0 0;font-size:11px">(clear employee, position, venue and photo option)</div></div>
+            </div>
+            <div class="sub" style="margin:6px 0 0;font-size:11px" title="Each employee's CURRENT position and default venue are used — an employee who moved is listed under the new one, also for earlier pay periods.">(position and venue = current)</div>
+          </div></div>
+          <div class="tc-step"><span class="tc-num">2</span><div class="tc-body">
+            <h3>Select Pay Period</h3>
+            <p class="sub">Choose the pay period or set a custom date range below.</p>
+            <div class="tc-row">
+              <div class="period-btns">
+                <button class="btn btn-secondary btn-sm" onclick="setPeriod(0)">Current pay period</button>
+                <button class="btn btn-secondary btn-sm" onclick="setPeriod(-1)">Previous pay period</button>
+              </div>
+              <div class="sub" id="liveRangeNote" style="margin:0;font-size:12px"></div>
+            </div>
+          </div></div>
+          <div class="tc-step"><span class="tc-num">3</span><div class="tc-body">
+            <h3>Select Date Range</h3>
+            <p class="sub">Select the date range for the Time Cards.</p>
+            <div class="grid">
+              <div><label for="repStart">From</label><input id="repStart" type="date"></div>
+              <div><label for="repEnd">To</label><input id="repEnd" type="date"></div>
+            </div>
+          </div></div>
+          <div class="tc-step"><span class="tc-num">4</span><div class="tc-body">
+            <h3>Generate Report</h3>
+            <p class="sub">Preview the Time Cards before printing.</p>
+            <div class="tc-row">
+              <button class="btn btn-primary" onclick="run(this, loadReport)">Show time cards</button>
+              <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
+              <p class="tc-tip"><b>Tip:</b> If you selected a Position and Venue, the printed report will automatically include only the first page of each employee's Time Card. For a complete individual Time Card, search by employee name or ID.</p>
+            </div>
+          </div></div>
         </div>
         <div id="repMsg" class="msg"></div>
+        <div id="repFilterMsg" class="msg"></div>
       </div>
       <div id="reportOut"></div>
       <div id="archOut" hidden></div>
@@ -902,6 +952,8 @@
         <button data-v="proc" onclick="holView('proc')">Process Holiday</button>
         <button data-v="hist" onclick="holView('hist')">Holiday History</button>
       </div>
+      <div class="list-head" style="margin:8px 0 0"><span class="sub" id="holUpdated" style="margin:0"></span>
+        <button class="btn btn-secondary btn-sm" id="holRefresh" onclick="run(this, loadHolidays)">Refresh list</button></div>
       <div id="hol_cal">
         <div class="block">
           <h2 id="hcTitle">Add holiday</h2>
@@ -1114,7 +1166,18 @@
     <div id="teMsg" class="msg" style="white-space:pre-line"></div>
     <div class="actions">
       <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save corrections</button>
-      <button class="btn btn-secondary" onclick="closeDlg('tcEditDlg')">Cancel</button>
+      <button class="btn btn-secondary" id="teCancel" onclick="tcEditClose()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= ADMIN CONFIRM (V79: replaces native confirm() where it matters) ================= -->
+<div class="dlg-overlay" id="askDlg" role="alertdialog" aria-modal="true" aria-labelledby="askMsg" style="z-index:140">
+  <div class="dlg" style="max-width:480px">
+    <p id="askMsg" style="white-space:pre-line;font-size:14px;margin:0 0 14px"></p>
+    <div class="actions">
+      <button class="btn btn-primary" id="askOk" onclick="askAnswer_(true)">OK</button>
+      <button class="btn btn-secondary" id="askCancel" onclick="askAnswer_(false)">Cancel</button>
     </div>
   </div>
 </div>
@@ -1486,7 +1549,7 @@ async function call(action, payload, opts) {
   if (!result.ok && result.error && result.error.code === 'AUTH_REQUIRED') { // only the CURRENT session's (stale() above)
     endSession(result.error.message || 'Session expired. Please log in again.');
   }
-  if (result.ok && !READ_ACTIONS.test(action)) TC_DIRTY = true; // V78: a save may change time cards
+  if (result.ok && !READ_ACTIONS.test(action)) { TC_DIRTY = true; LAST_SAVE_AT = Date.now(); } // V78/V79: a save may change time cards / holidays
   return result;
 }
 
@@ -1683,7 +1746,7 @@ function endSession(message) {
   resetTimeCardsView(); // TCCLEAR: the next login starts with an empty Time Cards page
   ptReset_(); // PT PICKER: no employee, reason or enabled button carried past the session
   closeAlertPopup();
-  document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { o.classList.remove('open'); });
+  document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { closeDlg(o.id); });
   document.getElementById('idleWarn').classList.remove('open');
   document.body.classList.remove('in-app');
   document.getElementById('appShell').classList.add('hidden-shell');
@@ -1745,7 +1808,8 @@ function holView(v) {
 async function loadHolidays() {
   const r = await call('listHolidays', {});
   if (!r.ok) { setMsg('holCalMsg', false, r.error.message); return; }
-  HOL = r.data; renderHolidays();
+  HOL = r.data; HOL_LOADED_AT = Date.now(); renderHolidays();
+  document.getElementById('holUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }); // V79
 }
 function holVenue(v) { return (HOL && HOL.venues[v]) || ({ BOTH: 'Both venues' })[v] || v; }
 function holPill(text, cls) { return el('span', { className: 'pill ' + cls, text: text }); }
@@ -1966,7 +2030,7 @@ const TAB_LOADERS = {
   terminals: function () { if (Array.isArray(kioskInfo)) renderTerminals({ ok: true, data: kioskInfo }); refreshTerminals(); loadStorage(false); return loadKC(); },
   alerts: function () { return checkAlerts(true); },
   rules: function () { return loadRules(); },
-  holidays: function () { return loadHolidays(); }, // HOLIDAY: loaded only when the menu opens
+  holidays: function () { return HOL && !holNeedsReload_(HOL_LOADED_AT, LAST_SAVE_AT, Date.now()) ? null : loadHolidays(); }, // V79: reuse for 2 min
   // REFRESH R2: Time Cards — if cards were showing, update them (the saved ones stay visible meanwhile)
   reports: function () {
     let had = false;
@@ -1980,8 +2044,13 @@ const TAB_LOADERS = {
 // V78: Time Cards shown less than 2 minutes ago are kept when you come back, unless something was saved since
 // (any successful save marks them stale). F5 / the menu refresh always loads fresh.
 let TC_DIRTY = false, TC_LOADED_AT = 0;
+let LAST_SAVE_AT = 0, LAST_REPORT_DATA = null, HOL_LOADED_AT = 0; // V79
 function tcNeedsReload_(shown, dirty, loadedAt, now) {
   return !shown || dirty || now - loadedAt >= 120000;
+}
+// V79: Holidays shown less than 2 minutes ago are reused when the menu opens again, unless anything was saved since.
+function holNeedsReload_(loadedAt, lastSaveAt, now) {
+  return !loadedAt || lastSaveAt > loadedAt || now - loadedAt >= 120000;
 }
 function showTab(name, noLoad) {
   if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); }
@@ -2052,6 +2121,7 @@ async function loadEmployees(pre) {
       .forEach(function (d) { ds.appendChild(el('option', { value: d, text: d })); });
     ds.value = keep;
     if (HOL) ptRender_(); // V76: Part-Time lists need the employee names
+    fillRepFilters_(); // V79: Time Cards position / venue lists
   }
   return result;
 }
@@ -2059,6 +2129,7 @@ async function loadVenues(pre) {
   const result = Array.isArray(pre) ? { ok: true, data: pre } : await call('listVenues', {});
   if (result.ok && Array.isArray(result.data)) {
     VENUES = result.data;
+    fillRepFilters_(); // V79
     const dv = document.getElementById('dashVenue'), keepDv = dv.value;
     dv.innerHTML = ''; dv.appendChild(el('option', { value: '', text: 'All venues' }));
     VENUES.forEach(function (v) { dv.appendChild(el('option', { value: v.venueId, text: v.venueName })); });
@@ -2600,15 +2671,43 @@ function fixAlert(a) {
 // ============================================================================
 // TIME CARDS (printable report)
 // ============================================================================
-makePicker('repSearch', 'repSearchList', function (e) {
-  reportEmp = e; document.getElementById('repSearch').value = e.name + ' (' + e.employeeId + ')';
+makePicker('repSearch', 'repSearchList', async function (e) {
+  const rs = document.getElementById('repSearch');
+  if (document.getElementById('repPos').value || document.getElementById('repVenue').value) { // V79
+    const ok = await askConfirm('You have active Position and Venue filters. Would you like to reset them and continue with Individual Employee Search?', 'Reset & Continue', 'Cancel');
+    if (!ok) { // Cancel: filters, cards and the previous choice stay as they were
+      const shown = document.getElementById('reportOut').dataset.emp;
+      reportEmp = shown ? (EMPLOYEES.find(function (x) { return x.employeeId === shown; }) || null) : null;
+      rs.value = reportEmp ? reportEmp.name + ' (' + reportEmp.employeeId + ')' : ''; rs.pickerSync(); return;
+    }
+    resetTcFilters_();
+  }
+  reportEmp = e; rs.value = e.name + ' (' + e.employeeId + ')'; rs.pickerSync();
 }, function () {
-  // × also clears the time cards shown below
-  reportEmp = null; clearMsg('repMsg'); clearReportState();
+  tcClearEmployee_(true); resetTcFilters_(); // V79: All employees needs Position + Venue again
+});
+// × / Position-Venue chosen / Reset Employee Filters: no employee chosen. The cards below are cleared on × (as before) and
+// when they are an individual Time Card; an All-employees result stays (the filters decide what shows).
+// The pay period and dates are never touched.
+function tcClearEmployee_(cards) {
+  const rs = document.getElementById('repSearch'); rs.value = ''; if (rs.pickerSync) rs.pickerSync();
+  reportEmp = null;
+  if (!cards && !document.getElementById('reportOut').dataset.emp) return;
+  document.getElementById('reportOut').dataset.emp = '';
+  clearMsg('repMsg'); clearReportState();
   REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not bring cards back
   document.getElementById('reportOut').innerHTML = ''; document.getElementById('reportOut').classList.remove('tc-drawing');
   document.getElementById('printBtn').disabled = true;
-});
+}
+function tcFilterChanged_(sel) { // V79: a Position / Venue choice switches from the individual search to the filter
+  if (sel.value) tcClearEmployee_();
+  applyTcFilters_();
+}
+function resetTcEmployeeFilters_() { // V79: employee, Position, Venue and photos back to empty; pay period and dates kept
+  tcClearEmployee_();
+  togglePhotoPages('reportOut', false);
+  resetTcFilters_();
+}
 document.getElementById('repSearch').addEventListener('input', function () { reportEmp = null; });
 
 function setPeriod(offset) {
@@ -2651,6 +2750,8 @@ async function loadReport() {
   setMsg('repMsg', issues === 0, cards.length + ' time card(s) ready.' +
     (issues ? ' ' + issues + ' shift(s) have a missing punch (marked in red) — fix them before payroll.' : ''));
   document.getElementById('printBtn').disabled = true; // A1: Print comes on after the last slice
+  LAST_REPORT_DATA = result.data; // V79: Edit Time rebuilds from this — set now, as a large result is still drawing when loadReport returns
+  out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79: the filters apply only to an All-employees result
   renderCards_(out, result.data, seq, function () {
     document.getElementById('printBtn').disabled = false;
     saveReportState(result.data);
@@ -2688,7 +2789,7 @@ function renderCards_(out, data, seq, done) {
     const frag = document.createDocumentFragment();
     for (const end = Math.min(i + TC_SLICE, data.cards.length); i < end; i++) frag.appendChild(renderTimecard(data.cards[i], data.startDate, data.endDate));
     out.appendChild(frag);
-    if (i < data.cards.length) setTimeout(slice, 0); else { out.classList.remove('tc-drawing'); done(); }
+    if (i < data.cards.length) setTimeout(slice, 0); else { out.classList.remove('tc-drawing'); applyTcFilters_(); done(); } // V79
   })();
 }
 
@@ -2712,7 +2813,9 @@ function restoreReportState(showSaved) {
   if (showSaved && data && data.cards) {
     REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not append to the saved cards
     const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
+    out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79
     data.cards.forEach(function (c) { out.appendChild(renderTimecard(c, data.startDate, data.endDate)); });
+    applyTcFilters_(); // V79
     document.getElementById('printBtn').disabled = !data.cards.length;
     setMsg('repMsg', true, 'Showing the time cards from ' + new Date(st.at).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) + ' — updating…');
   }
@@ -2746,6 +2849,7 @@ function resetTimeCardsView() {
 function renderTimecard(c, startDate, endDate) {
   const card = el('div', { className: 'timecard' });
   card._tc = { c: c, startDate: startDate, endDate: endDate }; // PHOTO: for the optional photo page
+  card.dataset.pos = String(c.position || ''); card.dataset.venue = String(c.defaultVenueId || ''); // V79: print filter (current position / default venue)
   card.appendChild(el('div', { className: 'tc-head' }, [
     el('div', { className: 'tc-title' }, ['Time Card ',
       el('button', { className: 'btn btn-secondary btn-sm no-print tc-edit', style: 'margin-left:10px;vertical-align:middle', text: '✎ Edit',
@@ -3047,10 +3151,48 @@ async function voidPaidBatch(btn, batchId, list) {
   });
 }
 // R5: confirm before printing incomplete time cards
-function printTimecards() {
+// V79: Print by Position + Venue. With one employee chosen the card shows as before ('all'); otherwise the cards stay hidden
+// until BOTH a Position and a Venue are chosen ('wait'), then only matching cards show and print ('filter'). '*' = All.
+function tcFilterState_(pos, venue, single) {
+  return single ? 'all' : (!pos || !venue) ? 'wait' : 'filter';
+}
+function tcCardMatches_(cardPos, cardVenue, pos, venue) {
+  return (pos === '*' || String(cardPos || '') === pos) && (venue === '*' || String(cardVenue || '') === venue);
+}
+function applyTcFilters_() {
+  const pos = document.getElementById('repPos').value, venue = document.getElementById('repVenue').value, out = document.getElementById('reportOut');
+  const cards = out.querySelectorAll('.timecard'), state = tcFilterState_(pos, venue, !!out.dataset.emp);
+  out.classList.toggle('p1only', state === 'filter'); // filtered print = page 1 of each card (no corrections page, no photos)
+  let last = null, shown = 0;
+  cards.forEach(function (card) {
+    card.hidden = state === 'wait' || (state === 'filter' && !tcCardMatches_(card.dataset.pos, card.dataset.venue, pos, venue));
+    card.classList.remove('tc-last-shown');
+    if (!card.hidden) { last = card; shown++; }
+  });
+  if (last) last.classList.add('tc-last-shown');
+  if (!cards.length || state === 'all') clearMsg('repFilterMsg');
+  else if (state === 'wait') setMsg('repFilterMsg', true, 'Select a Position and a Venue to show time cards.');
+  else if (!shown) setMsg('repFilterMsg', false, 'No matching Time Cards found.');
+  else setMsg('repFilterMsg', true, shown + ' time card(s) — ' + (pos === '*' ? 'All positions' : pos) + ' · ' +
+    (venue === '*' ? 'All venues' : (((VENUES || []).find(function (v) { return v.venueId === venue; }) || {}).venueName || venue)) + ' (current position and venue).');
+}
+function resetTcFilters_() { // V79: back to Select position / Select venue — an All-employees result hides again
+  document.getElementById('repPos').value = ''; document.getElementById('repVenue').value = ''; applyTcFilters_();
+}
+function fillRepFilters_() { // options from the employee and venue records (nothing hard-coded); a choice is kept on refill
+  const ps = document.getElementById('repPos'), vs = document.getElementById('repVenue'), keepP = ps.value, keepV = vs.value;
+  ps.innerHTML = ''; ps.appendChild(el('option', { value: '', text: 'Select position…' })); ps.appendChild(el('option', { value: '*', text: 'All positions' }));
+  Array.from(new Set(EMPLOYEES.map(function (e) { return String(e.position || ''); }).filter(Boolean))).sort()
+    .forEach(function (p) { ps.appendChild(el('option', { value: p, text: p })); });
+  vs.innerHTML = ''; vs.appendChild(el('option', { value: '', text: 'Select venue…' })); vs.appendChild(el('option', { value: '*', text: 'All venues' }));
+  (VENUES || []).forEach(function (v) { vs.appendChild(el('option', { value: v.venueId, text: v.venueName || v.venueId })); });
+  ps.value = keepP; vs.value = keepV;
+}
+async function printTimecards() {
   if (document.getElementById('reportOut').classList.contains('tc-drawing')) return; // A1 (V1): not every card is drawn yet
-  const bad = document.querySelectorAll('#reports .tc-incomplete').length;
-  if (bad && !confirm(bad + ' time card(s) are INCOMPLETE (missing clock-in / clock-out or still clocked in).\nThe warning will be printed on those cards. Print anyway?')) return;
+  if (!document.querySelectorAll('#reportOut .timecard:not([hidden])').length) { setMsg('repFilterMsg', false, 'No matching Time Cards found.'); return; } // V79
+  const bad = document.querySelectorAll('#reports .timecard:not([hidden]) .tc-incomplete').length; // V79: only cards that print
+  if (bad && !await askConfirm(bad + ' time card(s) are INCOMPLETE (missing clock-in / clock-out or still clocked in).\nThe warning will be printed on those cards. Print anyway?', 'Print anyway', 'Cancel')) return;
   fitPrintPages();
   window.print();
 }
@@ -3709,13 +3851,27 @@ async function savePinFor(e, in1, in2, msgId, closeAfter) {
 }
 
 // ---- dialogs ----
+let ASK_DONE = null; // V79: answer of the open Admin confirm dialog
 function openDlg(id) { document.getElementById(id).classList.add('open'); }
-function closeDlg(id) { document.getElementById(id).classList.remove('open'); }
+function closeDlg(id) { document.getElementById(id).classList.remove('open'); if (id === 'askDlg' && ASK_DONE) askAnswer_(false); }
+// V79: in-page confirm (some browsers block native confirm()). Resolves true only on the OK button; Cancel, Escape,
+// a click outside, logout or a newer question all answer false, and the dialog always closes.
+function askConfirm(msg, okLabel, cancelLabel) {
+  if (ASK_DONE) askAnswer_(false);
+  document.getElementById('askMsg').textContent = msg;
+  document.getElementById('askOk').textContent = okLabel || 'OK';
+  document.getElementById('askCancel').textContent = cancelLabel || 'Cancel';
+  openDlg('askDlg'); document.getElementById('askOk').focus();
+  return new Promise(function (res) { ASK_DONE = res; });
+}
+function askAnswer_(ok) { const done = ASK_DONE; ASK_DONE = null; closeDlg('askDlg'); if (done) done(ok); }
 document.querySelectorAll('.dlg-overlay').forEach(function (o) {
   o.addEventListener('mousedown', function (ev) { if (ev.target === o) closeDlg(o.id); });
 });
 document.addEventListener('keydown', function (ev) {
-  if (ev.key === 'Escape') document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { closeDlg(o.id); });
+  if (ev.key !== 'Escape') return;
+  if (ASK_DONE) { askAnswer_(false); return; } // V79: only the Admin confirm closes; the window below stays open
+  document.querySelectorAll('.dlg-overlay.open').forEach(function (o) { closeDlg(o.id); });
 });
 
 let editingEmp = null;
@@ -4691,8 +4847,9 @@ async function saveMyAccount() {
 // TCEDIT — edit an employee's punches straight from the time card
 // ============================================================================
 let TE = null;
-function openTcEdit(c, startDate, endDate) {
-  TE = { c: c, startDate: startDate, endDate: endDate };
+function openTcEdit(c, startDate, endDate, saved) {
+  TE = { c: c, startDate: startDate, endDate: endDate, saved: saved || 0 }; // V79: saved = corrections saved while this dialog was open
+  document.getElementById('teCancel').textContent = TE.saved ? 'Back to Time Card' : 'Cancel';
   document.getElementById('tcEditTitle').textContent = 'Edit time — ' + c.name + ' (ID ' + c.employeeId + ')';
   document.getElementById('tcEditSub').textContent = 'Pay period ' + fmt(startDate) + ' – ' + fmt(endDate) +
     '. Change a time or type, remove a punch, or add one. The original punch is kept in the history; every change is in the Audit Log.';
@@ -4714,6 +4871,7 @@ function openTcEdit(c, startDate, endDate) {
     const tr = addRow(tb, [shortDate(it.day), ty, saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { style: 'display:flex;gap:6px' }, [d, t]), rm]);
     const mark = function () { tr.style.background = rm.checked ? '#fde8e8' : (d.value !== v.date || t.value !== v.time || ty.value !== it.dir) ? '#fff7e6' : ''; };
     d.oninput = t.oninput = rm.onchange = ty.onchange = mark;
+    it.mark = mark; // V79: used when a failed change is put back
   });
   TE.items = items;
   document.getElementById('teAddDir').value = ''; document.getElementById('teAddDate').value = startDate; document.getElementById('teAddTime').value = '';
@@ -4722,6 +4880,50 @@ function openTcEdit(c, startDate, endDate) {
   if (c.defaultVenueId) vs.value = c.defaultVenueId;
   document.getElementById('teReason').value = ''; clearMsg('teMsg');
   openDlg('tcEditDlg');
+}
+// V79: Edit Time stays open after Save. Saved corrections are shown from the reloaded time card; only FAILED ones are put
+// back (a saved one can never be sent twice), and an Add that the reloaded card already shows is not put back either.
+function tcEditToRestore_(results, card) {
+  const out = { edits: [], add: null, alreadySaved: 0 };
+  const shows = function (a) { // the reloaded card already has this punch (the answer was lost but the save went through)
+    const key = a.date + 'T' + a.time;
+    return !!(card && card.rows || []).some(function (r) { return String((a.dir === 'IN' ? r.timeIn : r.timeOut) || '').indexOf(key) === 0; });
+  };
+  results.forEach(function (r) {
+    if (r.ok) return;
+    if (r.kind === 'add') { if (shows(r)) out.alreadySaved++; else out.add = { dir: r.dir, date: r.date, time: r.time, venueId: r.venueId }; }
+    else out.edits.push({ rawId: r.rawId, remove: r.kind === 'remove', date: r.date || '', time: r.time || '', dir: r.dir || '' });
+  });
+  return out;
+}
+function tcEditResults_(results) {
+  const saved = results.filter(function (r) { return r.ok; }).length, failed = results.length - saved;
+  const lines = results.map(function (r) { return r.ok ? '✓ ' + r.text : '✗ ' + r.text + ': ' + r.msg; });
+  return { saved: saved, failed: failed, text: failed
+    ? saved + ' saved, ' + failed + ' not saved:\n' + lines.join('\n') + '\nThe ones not saved are filled in again below — check them and Save again.'
+    : '✓ ' + saved + ' correction' + (saved === 1 ? '' : 's') + ' saved.\n' + lines.join('\n') };
+}
+function tcEditDirty_(rows, addDir) {
+  return !!addDir || rows.some(function (r) { return r.rm || r.d !== r.od || r.t !== r.ot || r.ty !== r.oty; });
+}
+async function tcEditClose() {
+  const rows = (TE && TE.items || []).map(function (it) { const f = it.inputs;
+    return { d: f.d.value, t: f.t.value, ty: f.ty.value, rm: f.rm.checked, od: it.orig.date, ot: it.orig.time, oty: it.dir }; });
+  if (tcEditDirty_(rows, document.getElementById('teAddDir').value) && !await askConfirm('You have unsaved changes. Discard them and close?', 'Discard & close', 'Keep editing')) return;
+  closeDlg('tcEditDlg');
+}
+// Put the failed changes back into the rebuilt dialog. Returns the ones whose punch is no longer listed.
+function tcEditRestore_(r) {
+  const lost = [];
+  r.edits.forEach(function (e) {
+    const it = (TE.items || []).find(function (x) { return x.rawId === e.rawId; });
+    if (!it) { lost.push(e.rawId); return; }
+    if (e.remove) it.inputs.rm.checked = true;
+    else { if (e.date) it.inputs.d.value = e.date; if (e.time) it.inputs.t.value = e.time; if (e.dir) it.inputs.ty.value = e.dir; }
+    it.mark();
+  });
+  if (r.add) { teAddDir.value = r.add.dir; teAddDate.value = r.add.date; teAddTime.value = r.add.time; if (r.add.venueId) teAddVenue.value = r.add.venueId; }
+  return lost;
 }
 async function saveTcEdit() {
   const reason = teReason.value.trim();
@@ -4743,19 +4945,22 @@ async function saveTcEdit() {
   }
   if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
   if (changes.some(function (x) { return x.kind === 'remove'; }) && reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for removing a punch.'); teReason.focus(); return; }
-  if (!confirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason)) return;
+  if (!await askConfirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason, 'Save corrections', 'Cancel')) return;
   const pinFix = pinFixForEmployee_(TE.c.employeeId);
   if (!verifyPinFix_(pinFix)) return;
   if (pinFix) { pinFix.corrected = false; pinFix.refreshed = false; }
   if (pinFix) pinFix.saving = true;
   try {
   const errs = [];
+  const results = []; // V79
   const savedDates = [];
   for (const x of changes) {
     let r;
     if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason, ...(x.dir ? { direction: x.dir } : {}) });
     else if (x.kind === 'remove') r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
     else r = await call('addMissedPunch', { employeeId: TE.c.employeeId, direction: x.dir, date: x.date, time: x.time, reason: reason, venueId: x.venueId });
+    results.push({ kind: x.kind, ok: !!r.ok, text: x.text, msg: r.ok ? '' : r.error.message, rawId: x.it ? x.it.rawId : '',
+      date: x.date || '', time: x.time || '', dir: x.dir || '', venueId: x.venueId || '' });
     if (!r.ok) errs.push(x.text + ': ' + r.error.message);
     else {
       if (x.it) savedDates.push(x.it.orig.date);
@@ -4763,10 +4968,27 @@ async function saveTcEdit() {
       rememberPinFixDates_(pinFix, savedDates);
     }
   }
-  if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n'));
-  else closeDlg('tcEditDlg');
+  const sum = tcEditResults_(results);
   toast(errs.length ? (changes.length - errs.length) + ' of ' + changes.length + ' saved.' : 'Corrections saved.');
-  if (tcMode === 'arch' && ARCH.previewing) await previewCorrection(); else await loadReport(); // refresh the time card right away
+  if (tcMode === 'arch' && ARCH.previewing) { // archived cards: unchanged behaviour (closes after a clean save)
+    if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n')); else closeDlg('tcEditDlg');
+    await previewCorrection();
+  } else {
+    // V79: reload the time card, then rebuild this dialog from it (stays open) and put back only the failed changes
+    const before = LAST_REPORT_DATA, saved = (TE.saved || 0) + sum.saved, empId = String(TE.c.employeeId);
+    await loadReport(); // refresh the time card right away
+    const data = LAST_REPORT_DATA !== before ? LAST_REPORT_DATA : null;
+    const fresh = data && (data.cards || []).find(function (c) { return String(c.employeeId) === empId; });
+    if (fresh && document.getElementById('tcEditDlg').classList.contains('open')) {
+      const back = tcEditToRestore_(results, fresh);
+      openTcEdit(fresh, data.startDate, data.endDate, saved);
+      const lost = tcEditRestore_(back);
+      if (back.edits.length || back.add) document.getElementById('teReason').value = reason;
+      setMsg('teMsg', !sum.failed, sum.text + (back.alreadySaved ? '\n(' + back.alreadySaved + ' "not saved" addition is already on the time card — not filled in again.)' : '') +
+        (lost.length ? '\n(' + lost.length + ' correction(s) could not be filled in again — the punch changed meanwhile; please re-check.)' : ''));
+    } else if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n'));
+    else closeDlg('tcEditDlg');
+  }
   if (pinFix) pinFix.saving = false;
   if (pinFix && savedDates.length) {
     if (!errs.length) await pinFixSaved_(pinFix, savedDates);
