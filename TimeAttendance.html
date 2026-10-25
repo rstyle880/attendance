@@ -478,6 +478,7 @@
     <button data-tab="rules"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Time Rules</span></button>
     <button data-tab="venues"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/></svg><span>Venues</span></button>
     <button data-tab="holidays"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><path d="m9 15 2 2 4-4"/></svg><span>Holidays</span></button>
+    <button data-tab="admins"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/><circle cx="12" cy="10" r="2.5"/><path d="M8 16c.8-1.6 2.3-2.5 4-2.5s3.2.9 4 2.5"/></svg><span>Admin Accounts</span></button>
     </nav>
     <div class="side-foot">
       <div class="side-user" role="button" tabindex="0" title="My Account — change your username or password" style="cursor:pointer" onclick="openMyAccount()" onkeydown="if(event.key==='Enter')openMyAccount()"><div class="av" id="sideAvatar">A</div><div><div class="nm" id="sideUser">Admin</div><div class="rl">Administrator · My Account</div></div></div>
@@ -946,6 +947,18 @@
         </div>
       </div>
     </section>
+    <!-- ================= ADMIN ACCOUNTS (V82, Full Admin only) ================= -->
+    <section id="admins">
+      <div class="block">
+        <div class="list-head"><h2 style="margin:0">Admin accounts</h2>
+          <button class="btn btn-secondary btn-sm" onclick="run(this, loadAdmins)">Refresh</button></div>
+        <p class="sub">Full Admins manage every admin login here. Each change asks for <b>your</b> password, ends that account's open sessions at once, and is recorded in the Audit Log. Passwords are never shown. To change your own username or password use <b>My Account</b> (bottom left).</p>
+        <div class="table-wrap"><table id="admTable"><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody></tbody></table></div>
+        <div id="admListMsg" class="msg"></div>
+        <p class="sub" style="font-size:12px;margin-top:8px">New accounts: spreadsheet menu <b>Time Attendance → Add admin account…</b> / <b>Add limited admin account…</b>.</p>
+      </div>
+    </section>
+
     <section id="holidays">
       <div class="subnav" id="holNav">
         <button class="on" data-v="cal" onclick="holView('cal')">Holiday Calendar</button>
@@ -1197,6 +1210,25 @@
     <div class="actions">
       <button class="btn btn-primary" onclick="run(this, saveMyAccount)">Save changes</button>
       <button class="btn btn-secondary" onclick="closeDlg('myAcctDlg')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= ADMIN ACCOUNT CHANGE (V82) ================= -->
+<div class="dlg-overlay" id="admDlg" role="dialog" aria-modal="true" aria-labelledby="admTitle">
+  <div class="dlg" style="max-width:440px">
+    <h2 id="admTitle">Admin account</h2>
+    <p class="sub" id="admSub"></p>
+    <div class="grid">
+      <div class="full" id="admNewUserBox"><label for="admNewUser">New username</label><input id="admNewUser" maxlength="30" autocomplete="off" placeholder="3–30 letters / numbers, no spaces"></div>
+      <div class="full" id="admNewPwBox"><label for="admNewPw">New password (give it to the person privately)</label><input id="admNewPw" type="password" autocomplete="new-password" placeholder="at least 8 characters"></div>
+      <div class="full" id="admNewPw2Box"><label for="admNewPw2">Repeat new password</label><input id="admNewPw2" type="password" autocomplete="new-password"></div>
+      <div class="full"><label for="admCur">Your current password</label><input id="admCur" type="password" autocomplete="current-password"></div>
+    </div>
+    <div id="admMsg" class="msg"></div>
+    <div class="actions">
+      <button class="btn btn-primary" id="admSave" onclick="run(this, saveAdm)">Save</button>
+      <button class="btn btn-secondary" onclick="closeDlg('admDlg')">Cancel</button>
     </div>
   </div>
 </div>
@@ -1654,6 +1686,7 @@ async function doLogin() {
   // Keep the session through a page refresh (F5). sessionStorage is cleared
   // when this browser tab/window is closed; the server also expires it.
   try { sessionStorage.setItem('admin_session', sessionToken); sessionStorage.setItem('admin_user', result.data.username || ''); } catch (e) {}
+  try { sessionStorage.setItem('admin_role', result.data.role || 'Full'); } catch (e) {} // V81
   loginPass.value = ''; clearMsg('loginMsg');
   // Unlock audio now (browsers only allow sound after a click — this login click counts).
   try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch (e) {}
@@ -1667,6 +1700,7 @@ async function enterApp() {
   let who = 'Admin';
   try { who = sessionStorage.getItem('admin_user') || 'Admin'; } catch (e) {}
   document.getElementById('sideUser').textContent = who;
+  applyRole_(); // V81
   document.getElementById('sideAvatar').textContent = who.charAt(0).toUpperCase();
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appShell').classList.remove('hidden-shell');
@@ -1742,7 +1776,7 @@ function endSession(message) {
   sessionToken = null; SESSION_GEN++; // SESSION GUARD: answers of this session are ignored from now on
   clearInterval(idleTimer); idleTimer = null;
   stopAlertPolling(); clearInterval(dashTimer); clearInterval(dashTick);
-  try { sessionStorage.removeItem('admin_session'); sessionStorage.removeItem('admin_last_activity'); } catch (e) {}
+  try { sessionStorage.removeItem('admin_session'); sessionStorage.removeItem('admin_last_activity'); sessionStorage.removeItem('admin_role'); } catch (e) {}
   resetTimeCardsView(); // TCCLEAR: the next login starts with an empty Time Cards page
   ptReset_(); // PT PICKER: no employee, reason or enabled button carried past the session
   closeAlertPopup();
@@ -2030,6 +2064,7 @@ const TAB_LOADERS = {
   terminals: function () { if (Array.isArray(kioskInfo)) renderTerminals({ ok: true, data: kioskInfo }); refreshTerminals(); loadStorage(false); return loadKC(); },
   alerts: function () { return checkAlerts(true); },
   rules: function () { return loadRules(); },
+  admins: function () { return loadAdmins(); }, // V82
   holidays: function () { return HOL && !holNeedsReload_(HOL_LOADED_AT, LAST_SAVE_AT, Date.now()) ? null : loadHolidays(); }, // V79: reuse for 2 min
   // REFRESH R2: Time Cards — if cards were showing, update them (the saved ones stay visible meanwhile)
   reports: function () {
@@ -2052,7 +2087,18 @@ function tcNeedsReload_(shown, dirty, loadedAt, now) {
 function holNeedsReload_(loadedAt, lastSaveAt, now) {
   return !loadedAt || lastSaveAt > loadedAt || now - loadedAt >= 120000;
 }
+// V81: Limited Admin (role from the login answer) — Kiosks, Time Rules and Venues are hidden and never opened.
+// Only the menu: the server refuses these actions for a Limited Admin as well.
+const LIMITED_TABS = ['terminals', 'rules', 'venues', 'admins'];
+function isLimited_() { try { return sessionStorage.getItem('admin_role') === 'Limited'; } catch (e) { return false; } }
+function applyRole_() {
+  const limited = isLimited_();
+  document.querySelectorAll('nav button[data-tab]').forEach(function (b) { b.style.display = limited && LIMITED_TABS.indexOf(b.dataset.tab) !== -1 ? 'none' : ''; });
+  const rl = document.querySelector('.side-user .rl');
+  if (rl) rl.textContent = (limited ? 'Limited Admin' : 'Administrator') + ' · My Account';
+}
 function showTab(name, noLoad) {
+  if (isLimited_() && LIMITED_TABS.indexOf(name) !== -1) name = 'dashboard';
   if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); }
   try { sessionStorage.setItem('admin_tab', name); } catch (e) {}
   currentTab = name;
@@ -3848,6 +3894,64 @@ async function savePinFor(e, in1, in2, msgId, closeAfter) {
   if (closeAfter) closeDlg('pinDlg');
   else { setMsg(msgId, true, 'New PIN saved. Give it to the employee privately.'); document.getElementById('edPinFields').style.display = 'none'; document.getElementById('edPinToggle').style.display = ''; }
   toast('PIN changed for ' + e.name + '.');
+}
+
+// ---- V82: Admin Accounts (Full Admin only; the server refuses it for Limited Admins) ----
+let ADM_LIST = [], ADM_EDIT = null;
+async function loadAdmins() {
+  const r = await call('listAdmins', {});
+  const tb = document.querySelector('#admTable tbody'); tb.innerHTML = '';
+  if (!r.ok) { setMsg('admListMsg', false, r.error.message); return; }
+  clearMsg('admListMsg'); ADM_LIST = r.data;
+  let me = ''; try { me = (sessionStorage.getItem('admin_user') || '').toLowerCase(); } catch (e) {}
+  r.data.forEach(function (a) {
+    const self = a.username.toLowerCase() === me, active = a.status === 'Active', full = a.role === 'Full';
+    const btn = function (text, op, disabled, title) {
+      const b = el('button', { className: 'btn btn-secondary btn-sm', text: text, title: title || '' });
+      b.disabled = !!disabled; b.onclick = function () { openAdm(op, a); }; return b;
+    };
+    tb.appendChild(el('tr', {}, [
+      el('td', {}, [el('b', { text: a.username }), self ? el('span', { className: 'sub', style: 'margin-left:6px', text: '(you)' }) : el('span')]),
+      el('td', { text: full ? 'Full Admin' : 'Limited Admin' }),
+      el('td', { text: a.status + (a.locked ? ' · locked' : '') }),
+      el('td', { text: a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString('en-US', { timeZone: TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—' }),
+      el('td', { style: 'white-space:normal' }, [
+        btn('Reset password', 'resetPassword'), ' ', btn('Change username', 'rename'), ' ',
+        btn(active ? 'Deactivate' : 'Activate', 'setStatus', self && active, self ? 'You cannot deactivate your own account' : ''), ' ',
+        btn(full ? 'Make Limited' : 'Make Full', 'setRole', self && full, self ? 'You cannot limit your own account' : '')])
+    ]));
+  });
+}
+function openAdm(op, a) {
+  ADM_EDIT = { op: op, a: a };
+  const what = { resetPassword: 'Reset password', rename: 'Change username',
+    setStatus: a.status === 'Active' ? 'Deactivate account' : 'Activate account', setRole: a.role === 'Full' ? 'Make Limited Admin' : 'Make Full Admin' }[op];
+  document.getElementById('admTitle').textContent = what + ' — ' + a.username;
+  document.getElementById('admSub').textContent = op === 'setStatus' ? (a.status === 'Active' ? 'The account can no longer log in; open sessions end now.' : 'The account can log in again.')
+    : op === 'setRole' ? (a.role === 'Full' ? 'No Kiosks, Time Rules, Venues or Admin Accounts. Open sessions end now.' : 'Full access to every menu. Open sessions end now.')
+    : op === 'rename' ? 'The person logs in with the new username; open sessions end now.' : 'The old password stops working at once; the account is unlocked.';
+  document.getElementById('admNewUserBox').hidden = op !== 'rename';
+  document.getElementById('admNewPwBox').hidden = document.getElementById('admNewPw2Box').hidden = op !== 'resetPassword';
+  ['admNewUser', 'admNewPw', 'admNewPw2', 'admCur'].forEach(function (id) { document.getElementById(id).value = ''; });
+  if (op === 'rename') document.getElementById('admNewUser').value = a.username;
+  clearMsg('admMsg'); openDlg('admDlg');
+}
+async function saveAdm() {
+  const e = ADM_EDIT; if (!e) return;
+  const p = { targetAdminId: e.a.adminId, op: e.op, currentPassword: document.getElementById('admCur').value };
+  if (e.op === 'resetPassword') {
+    p.newPassword = document.getElementById('admNewPw').value;
+    if (p.newPassword !== document.getElementById('admNewPw2').value) { setMsg('admMsg', false, 'The two new passwords are not the same.'); return; }
+  }
+  if (e.op === 'rename') p.newUsername = document.getElementById('admNewUser').value.trim();
+  if (e.op === 'setStatus') p.status = e.a.status === 'Active' ? 'Inactive' : 'Active';
+  if (e.op === 'setRole') p.role = e.a.role === 'Full' ? 'Limited' : 'Full';
+  if (!p.currentPassword) { setMsg('admMsg', false, 'Enter your current password.'); return; }
+  const r = await call('manageAdmin', p);
+  ['admNewPw', 'admNewPw2', 'admCur'].forEach(function (id) { document.getElementById(id).value = ''; });
+  if (!r.ok) { setMsg('admMsg', false, r.error.message); return; }
+  closeDlg('admDlg'); toast('Saved: ' + document.getElementById('admTitle').textContent);
+  await loadAdmins();
 }
 
 // ---- dialogs ----
