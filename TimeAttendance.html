@@ -164,6 +164,8 @@
   .tc-row .period-btns + .sub { align-self: center; }
   .tc-or { display: flex; align-items: center; gap: 12px; margin: 14px 0 10px; font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--muted); }
   .tc-or::before, .tc-or::after { content: ''; flex: 1; border-top: 1px solid #d6dbe6; }
+  .tc-dates input { background: #f1f4f9; color: var(--navy); font-weight: 600; pointer-events: none; } /* V83: set by the pay period only */
+  .period-btns .btn.on { background: #1f4e9c; color: #fff; border-color: #1f4e9c; }
   .tc-tip { flex: 1 1 320px; margin: 0; font-size: 12px; color: #3b475e; background: #eaf1fb; border-radius: 8px; padding: 8px 12px; }
   @media (max-width: 640px) { .tc-step { padding: 12px; gap: 10px; } .tc-row > div:has(> select) { max-width: none; } }
   .timecard { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 22px; margin-top: 20px; }
@@ -705,7 +707,7 @@
             </div>
             <div class="tc-row" style="justify-content:space-between;margin-top:12px">
               <div><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:0"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)" style="width:auto"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
-                <div class="sub" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div></div>
+                <div class="sub" id="tcPhotosNote" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div></div>
               <div style="text-align:right"><button class="btn btn-secondary btn-sm" id="repReset" onclick="resetTcEmployeeFilters_()">Reset Employee Filters</button>
                 <div class="sub" style="margin:4px 0 0;font-size:11px">(clear employee, position, venue and photo option)</div></div>
             </div>
@@ -713,30 +715,27 @@
           </div></div>
           <div class="tc-step"><span class="tc-num">2</span><div class="tc-body">
             <h3>Select Pay Period</h3>
-            <p class="sub">Choose the pay period or set a custom date range below.</p>
+            <p class="sub">Choose the Current or the Previous pay period. The dates are filled in automatically.</p>
             <div class="tc-row">
               <div class="period-btns">
-                <button class="btn btn-secondary btn-sm" onclick="setPeriod(0)">Current pay period</button>
-                <button class="btn btn-secondary btn-sm" onclick="setPeriod(-1)">Previous pay period</button>
+                <button class="btn btn-secondary btn-sm" data-period="0" onclick="setPeriod(0)">Current pay period</button>
+                <button class="btn btn-secondary btn-sm" data-period="-1" onclick="setPeriod(-1)">Previous pay period</button>
               </div>
               <div class="sub" id="liveRangeNote" style="margin:0;font-size:12px"></div>
             </div>
-          </div></div>
-          <div class="tc-step"><span class="tc-num">3</span><div class="tc-body">
-            <h3>Select Date Range</h3>
-            <p class="sub">Select the date range for the Time Cards.</p>
-            <div class="grid">
-              <div><label for="repStart">From</label><input id="repStart" type="date"></div>
-              <div><label for="repEnd">To</label><input id="repEnd" type="date"></div>
+            <div class="grid tc-dates" style="margin-top:12px">
+              <div><label for="repStart">From</label><input id="repStart" type="date" readonly tabindex="-1" title="Set by the pay period"></div>
+              <div><label for="repEnd">To</label><input id="repEnd" type="date" readonly tabindex="-1" title="Set by the pay period"></div>
             </div>
           </div></div>
-          <div class="tc-step"><span class="tc-num">4</span><div class="tc-body">
+          <div class="tc-step" id="tcStep3"><span class="tc-num">3</span><div class="tc-body">
             <h3>Generate Report</h3>
             <p class="sub">Preview the Time Cards before printing.</p>
+            <p class="sub" id="tcStep3Hint" style="color:#b45309">Select an employee from the search list, or choose both a Position and a Venue, to generate Time Cards.</p>
             <div class="tc-row">
-              <button class="btn btn-primary" onclick="run(this, loadReport)">Show time cards</button>
+              <button class="btn btn-primary" id="tcShowBtn" onclick="run(this, loadReport).then(updateStep3_)" disabled>Show time cards</button>
               <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
-              <p class="tc-tip"><b>Tip:</b> If you selected a Position and Venue, the printed report will automatically include only the first page of each employee's Time Card. For a complete individual Time Card, search by employee name or ID.</p>
+              <p class="tc-tip"><b>Tip:</b> To print a complete Time Card, search for the employee by name or ID. If you select a Position and Venue, only the first page of each employee’s Time Card will be printed.</p>
             </div>
           </div></div>
         </div>
@@ -2728,7 +2727,7 @@ makePicker('repSearch', 'repSearchList', async function (e) {
     }
     resetTcFilters_();
   }
-  reportEmp = e; rs.value = e.name + ' (' + e.employeeId + ')'; rs.pickerSync();
+  reportEmp = e; rs.value = e.name + ' (' + e.employeeId + ')'; rs.pickerSync(); updateStep3_();
 }, function () {
   tcClearEmployee_(true); resetTcFilters_(); // V79: All employees needs Position + Venue again
 });
@@ -2738,32 +2737,67 @@ makePicker('repSearch', 'repSearchList', async function (e) {
 function tcClearEmployee_(cards) {
   const rs = document.getElementById('repSearch'); rs.value = ''; if (rs.pickerSync) rs.pickerSync();
   reportEmp = null;
-  if (!cards && !document.getElementById('reportOut').dataset.emp) return;
+  if (cards || document.getElementById('reportOut').dataset.emp) tcClearReport_();
+  updateStep3_();
+}
+// V83: the report shown below is removed (cards, counts, messages; Print off until a new report is loaded).
+function tcClearReport_() {
   document.getElementById('reportOut').dataset.emp = '';
-  clearMsg('repMsg'); clearReportState();
+  clearMsg('repMsg'); clearMsg('repFilterMsg'); clearReportState();
   REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not bring cards back
   document.getElementById('reportOut').innerHTML = ''; document.getElementById('reportOut').classList.remove('tc-drawing');
   document.getElementById('printBtn').disabled = true;
 }
+// V83: Step 3 (Generate Report) only for an employee picked from the list, or for BOTH a Position and a Venue.
+function tcReady_(empPicked, pos, venue) {
+  return !!empPicked || !!(pos && venue);
+}
+// Step 3 is always shown: Show time cards needs a valid choice; Print also needs a loaded report for that same choice.
+// Punch photos are for individual reports only (Position + Venue unchecks and disables them).
+function updateStep3_() {
+  const pos = document.getElementById('repPos').value, venue = document.getElementById('repVenue').value, out = document.getElementById('reportOut');
+  const ok = tcReady_(!!reportEmp, pos, venue);
+  document.getElementById('tcStep3Hint').hidden = ok;
+  const show = document.getElementById('tcShowBtn');
+  if (!show.classList.contains('loading')) show.disabled = !ok;
+  const loaded = !!out.querySelector('.timecard') && !out.classList.contains('tc-drawing') && !out.classList.contains('tc-loading') &&
+    (reportEmp ? out.dataset.emp === String(reportEmp.employeeId) : !out.dataset.emp);
+  document.getElementById('printBtn').disabled = !ok || !loaded;
+  const filterMode = !reportEmp && !!(pos && venue), ph = document.getElementById('tcPhotos');
+  if (filterMode && ph.checked) togglePhotoPages('reportOut', false);
+  ph.disabled = filterMode;
+  document.getElementById('tcPhotosNote').textContent = filterMode ? 'Punch photos are available for individual employee reports only.' : 'Show employee photos on the report.';
+}
 function tcFilterChanged_(sel) { // V79: a Position / Venue choice switches from the individual search to the filter
   if (sel.value) tcClearEmployee_();
-  applyTcFilters_();
+  applyTcFilters_(); updateStep3_();
 }
-function resetTcEmployeeFilters_() { // V79: employee, Position, Venue and photos back to empty; pay period and dates kept
-  tcClearEmployee_();
+function resetTcEmployeeFilters_() { // V79/V83: employee, Position, Venue, photos and the report cleared; pay period and dates kept
+  tcClearEmployee_(true);
   togglePhotoPages('reportOut', false);
-  resetTcFilters_();
+  resetTcFilters_(); updateStep3_();
 }
-document.getElementById('repSearch').addEventListener('input', function () { reportEmp = null; });
+document.getElementById('repSearch').addEventListener('input', function () { reportEmp = null; updateStep3_(); });
 
 function setPeriod(offset) {
   const p = periodFor(offset);
+  const changed = repStart.value !== p.start || repEnd.value !== p.end;
   repStart.value = p.start; repEnd.value = p.end;
+  markPeriod_(); // V83
+  if (changed) tcClearReport_(); // V83: the old report is for the other pay period — make a new one
+  updateStep3_();
   if (typeof tcView === 'function' && tcMode !== 'live') tcView('live');
 }
 
+// V83: the dates come only from the Current / Previous pay period buttons; the chosen button is highlighted.
+function markPeriod_() {
+  document.querySelectorAll('#livePanel [data-period]').forEach(function (b) {
+    const p = periodFor(parseInt(b.dataset.period, 10));
+    b.classList.toggle('on', !!p && p.start === repStart.value && p.end === repEnd.value);
+  });
+}
 async function loadReport() {
-  if (!repStart.value || !repEnd.value) { setMsg('repMsg', false, 'Choose the dates first.'); return; }
+  if (!repStart.value || !repEnd.value) { setMsg('repMsg', false, 'Choose the Current or the Previous pay period first.'); return; }
   if (SERVER_PERIODS && repStart.value < SERVER_PERIODS.previous.start) { // ARCHIVE: live = Current + Previous only
     setMsg('repMsg', false, 'Dates before ' + shortDate(SERVER_PERIODS.previous.start) + ' are archived. Open "Archived Time Cards".'); return;
   }
@@ -2793,13 +2827,14 @@ async function loadReport() {
   const cards = result.data.cards;
   if (!cards.length) { finishPhotoRefresh_('reportOut', photoRefresh, true); setMsg('repMsg', false, 'No punches in this period.'); document.getElementById('printBtn').disabled = true; return; }
   const issues = cards.reduce(function (n, c) { return n + c.issues; }, 0);
-  setMsg('repMsg', issues === 0, cards.length + ' time card(s) ready.' +
+  if (reportEmp) setMsg('repMsg', issues === 0, cards.length + ' time card(s) ready.' +
     (issues ? ' ' + issues + ' shift(s) have a missing punch (marked in red) — fix them before payroll.' : ''));
+  else setMsg('repMsg', true, 'Time cards loaded for ' + shortDate(repStart.value) + ' – ' + shortDate(repEnd.value) + '.'); // V83: counts below follow the filters
   document.getElementById('printBtn').disabled = true; // A1: Print comes on after the last slice
   LAST_REPORT_DATA = result.data; // V79: Edit Time rebuilds from this — set now, as a large result is still drawing when loadReport returns
   out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79: the filters apply only to an All-employees result
   renderCards_(out, result.data, seq, function () {
-    document.getElementById('printBtn').disabled = false;
+    updateStep3_(); // V83: Print only for a report matching the current choice
     saveReportState(result.data);
     TC_DIRTY = false; TC_LOADED_AT = Date.now(); // V78
     finishPhotoRefresh_('reportOut', photoRefresh, true); // PHOTO: rendering is complete before recovery
@@ -2852,7 +2887,8 @@ function restoreReportState(showSaved) {
   let st = null, data = null;
   try { st = JSON.parse(sessionStorage.getItem('admin_tc_state') || 'null'); data = JSON.parse(sessionStorage.getItem('admin_tc_data') || 'null'); } catch (e) {}
   if (!st) return false;
-  repStart.value = st.start || ''; repEnd.value = st.end || '';
+  repStart.value = st.start || ''; repEnd.value = st.end || ''; markPeriod_(); // V83
+  setTimeout(updateStep3_, 0); // V83: after reportEmp is restored below
   document.getElementById('repSearch').value = st.empLabel || '';
   if (document.getElementById('repSearch').pickerSync) document.getElementById('repSearch').pickerSync();
   reportEmp = st.empId ? (EMPLOYEES.find(function (e) { return e.employeeId === st.empId; }) || { employeeId: st.empId, name: st.empLabel }) : null;
@@ -2862,7 +2898,7 @@ function restoreReportState(showSaved) {
     out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79
     data.cards.forEach(function (c) { out.appendChild(renderTimecard(c, data.startDate, data.endDate)); });
     applyTcFilters_(); // V79
-    document.getElementById('printBtn').disabled = !data.cards.length;
+    updateStep3_(); // V83
     setMsg('repMsg', true, 'Showing the time cards from ' + new Date(st.at).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) + ' — updating…');
   }
   return !!(data && data.cards);
@@ -2880,7 +2916,7 @@ function resetTimeCardsView() {
   clearReportState();
   reportEmp = null;
   const rs = document.getElementById('repSearch'); rs.value = ''; if (rs.pickerSync) rs.pickerSync();
-  repStart.value = ''; repEnd.value = '';
+  repStart.value = ''; repEnd.value = ''; markPeriod_(); updateStep3_(); // V83
   document.getElementById('reportOut').innerHTML = ''; document.getElementById('reportOut').classList.remove('tc-drawing'); clearMsg('repMsg');
   document.getElementById('printBtn').disabled = true;
   document.getElementById('tcPhotos').checked = false;
@@ -3219,8 +3255,12 @@ function applyTcFilters_() {
   if (!cards.length || state === 'all') clearMsg('repFilterMsg');
   else if (state === 'wait') setMsg('repFilterMsg', true, 'Select a Position and a Venue to show time cards.');
   else if (!shown) setMsg('repFilterMsg', false, 'No matching Time Cards found.');
-  else setMsg('repFilterMsg', true, shown + ' time card(s) — ' + (pos === '*' ? 'All positions' : pos) + ' · ' +
-    (venue === '*' ? 'All venues' : (((VENUES || []).find(function (v) { return v.venueId === venue; }) || {}).venueName || venue)) + ' (current position and venue).');
+  else {
+    const bad = out.querySelectorAll('.timecard:not([hidden]) .tc-incomplete').length; // V83: counts of the cards shown
+    setMsg('repFilterMsg', !bad, shown + ' time card(s) — ' + (pos === '*' ? 'All positions' : pos) + ' · ' +
+      (venue === '*' ? 'All venues' : (((VENUES || []).find(function (v) { return v.venueId === venue; }) || {}).venueName || venue)) + ' (current position and venue).' +
+      (bad ? ' ' + bad + ' of them have a missing punch (marked in red) — fix them before payroll.' : ''));
+  }
 }
 function resetTcFilters_() { // V79: back to Select position / Select venue — an All-employees result hides again
   document.getElementById('repPos').value = ''; document.getElementById('repVenue').value = ''; applyTcFilters_();
