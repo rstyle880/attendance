@@ -1101,6 +1101,8 @@
     <h2 id="empDlgTitle">Edit employee</h2>
     <p class="sub" id="empDlgSub"></p>
     <div class="grid">
+      <div id="edNameFirstWrap"><label for="edFirst">First Name</label><input id="edFirst" maxlength="40" autocomplete="off"></div>
+      <div id="edNameLastWrap"><label for="edLast">Last Name</label><input id="edLast" maxlength="40" autocomplete="off"></div>
       <div><label for="edDept">Department</label><select id="edDept"></select></div>
       <div><label for="edPos">Position</label><select id="edPos"></select></div>
       <div><label for="edHire">Hire date (leave empty if not known yet)</label><input id="edHire" type="date"></div>
@@ -1111,7 +1113,7 @@
       <div><label for="edEmpStatus">Employment Status</label>
         <select id="edEmpStatus" onchange="edStatusChanged()"><option value="">Not set</option><option value="Regular">Regular</option><option value="Probationary">Probationary</option><option value="Part-Time">Part-Time</option><option value="Agency Staff">Agency Staff</option></select></div>
       <div><label for="edStatus">Employee Status</label><select id="edStatus" onchange="edStatusChanged()"></select></div>
-      <div class="full" id="edReasonWrap" style="display:none"><label for="edReason">Reason for the status change (required)</label>
+      <div class="full" id="edReasonWrap" style="display:none"><label for="edReason">Reason for the change (required)</label>
         <input id="edReason" maxlength="200" placeholder="e.g. Passed probation · Maternity leave · Resigned, last day 9/30"></div>
     </div>
     <p class="sub" style="margin-top:10px;">Example: an 8.5-hour shift with a 30-minute break = 8 hours. Use 4 for a 4-hour part-timer, or 0 to not check. Only <b>Active</b> employees can use the kiosk.</p>
@@ -2094,7 +2096,7 @@ function applyRole_() {
   const limited = isLimited_();
   document.querySelectorAll('nav button[data-tab]').forEach(function (b) { b.style.display = limited && LIMITED_TABS.indexOf(b.dataset.tab) !== -1 ? 'none' : ''; });
   const rl = document.querySelector('.side-user .rl');
-  if (rl) rl.textContent = (limited ? 'Limited Admin' : 'Administrator') + ' · My Account';
+  if (rl) rl.textContent = limited ? 'My Account' : 'Administrator · My Account'; // V85: display only (role and permissions unchanged)
 }
 function showTab(name, noLoad) {
   if (isLimited_() && LIMITED_TABS.indexOf(name) !== -1) name = 'dashboard';
@@ -4023,6 +4025,7 @@ function openEmpDialog(e) {
   editingEmp = e;
   document.getElementById('empDlgTitle').textContent = e.name;
   document.getElementById('empDlgSub').textContent = 'Employee ID ' + e.employeeId + (e.department ? ', ' + e.department : '');
+  const nm = splitName_(e.name); edFirst.value = nm.first; edLast.value = nm.last; // V85: Full and Limited Admin
   fillDeptSelect(document.getElementById('edDept'), e.department || '');
   edHire.value = e.hireDate || '';
   const vs = document.getElementById('edVenue'); vs.innerHTML = '';
@@ -4046,15 +4049,23 @@ function openEmpDialog(e) {
   st.value = e.status || 'Active';
   edEmpStatus.value = e.employmentStatus || '';
   edReason.value = ''; document.getElementById('edReasonWrap').style.display = 'none';
+  edFirst.oninput = edLast.oninput = edStatusChanged; // V85: a name change also asks for a reason
   document.getElementById('edPinFields').style.display = 'none'; document.getElementById('edPinToggle').style.display = '';
   edPin1.value = ''; edPin2.value = ''; clearMsg('edPinMsg');
   document.getElementById('edArchiveBox').style.display = ['Resigned', 'Terminated', 'Inactive', 'Created in error'].indexOf(e.status) !== -1 ? '' : 'none';
   clearMsg('edMsg');
   openDlg('empDlg');
 }
+// V85: "First Middle Last" → First = everything before the last word, Last = the last word
+function splitName_(name) {
+  const w = String(name || '').replace(/\s+/g, ' ').trim().split(' ');
+  return w.length < 2 ? { first: w[0] || '', last: '' } : { first: w.slice(0, -1).join(' '), last: w[w.length - 1] };
+}
+function edNewName_() { return (edFirst.value + ' ' + edLast.value).replace(/\s+/g, ' ').trim(); }
+function edNameChanged_() { return !!editingEmp && edNewName_() !== String(editingEmp.name).replace(/\s+/g, ' ').trim(); }
 function edStatusChanged() {
   const e = editingEmp; if (!e) return;
-  const changed = edStatus.value !== (e.status || 'Active') || edEmpStatus.value !== (e.employmentStatus || '');
+  const changed = edStatus.value !== (e.status || 'Active') || edEmpStatus.value !== (e.employmentStatus || '') || edNameChanged_();
   document.getElementById('edReasonWrap').style.display = changed ? '' : 'none';
 }
 async function saveEmpDialog() {
@@ -4063,6 +4074,17 @@ async function saveEmpDialog() {
   if (!edDept.value || !edPos.value) { setMsg('edMsg', false, 'Select the department and position.'); return; }
   if (!deptPosAllowed(edDept.value, edPos.value, e.department, e.position)) { setMsg('edMsg', false, 'Choose a Department and a Position from the lists.'); return; }
   const stChanged = edStatus.value !== (e.status || 'Active'), esChanged = edEmpStatus.value !== (e.employmentStatus || '');
+  const nmChanged = edNameChanged_(); // V85
+  if (nmChanged) {
+    if (!edFirst.value.trim() || !edLast.value.trim()) { setMsg('edMsg', false, 'Enter the First Name and the Last Name.'); return; }
+    if (!/^[\p{L}][\p{L} .'\u2019-]*$/u.test(edNewName_())) { setMsg('edMsg', false, 'Names may use letters, spaces, period, apostrophe or hyphen only.'); return; }
+    if (edReason.value.trim().length < 3) { setMsg('edMsg', false, 'Enter a reason for the name change.'); edReason.focus(); return; }
+    const other = EMPLOYEES.filter(function (x) { return x.employeeId !== e.employeeId && String(x.name).replace(/\s+/g, ' ').trim().toLowerCase() === edNewName_().toLowerCase(); })[0];
+    if (other) { setMsg('edMsg', false, 'Another employee already has this name (ID ' + other.employeeId + '). Nothing was saved.'); return; }
+    if (!await askConfirm('Change the name of Employee ID ' + e.employeeId + ':\n\n' + e.name + '  →  ' + edNewName_() +
+      '\n\nThe Employee ID stays ' + e.employeeId + '. Time cards, punches, photos and archived records stay with this employee.\n\nReason: ' + edReason.value.trim(),
+      'Change name', 'Cancel')) return;
+  }
   const payload = { employeeId: e.employeeId, department: edDept.value, position: edPos.value, hireDate: edHire.value,
     breakRule: edBreak.value, requiredHours: edHours.value, reason: 'Employee details updated' };
   // Default venue correction: it changes the company printed on time cards and the venue's staff count
@@ -4085,14 +4107,11 @@ async function saveEmpDialog() {
     if (esChanged) payload.employmentStatus = edEmpStatus.value;
     payload.reason = edReason.value.trim();
   }
-  let r = await call('updateEmployee', payload);
-  if (!r.ok && r.error.code === 'DUPLICATE_NAME') { // DUPNAME: renamed to a name that already exists
-    if (!confirm('⚠️ ' + r.error.message + '\n\nOK = save anyway (different person).\nCancel = do not save.')) { setMsg('edMsg', false, 'Not saved.'); return; }
-    payload.confirmDuplicateName = true; r = await call('updateEmployee', payload);
-  }
+  if (nmChanged) { payload.name = edNewName_(); payload.expectedName = e.name; payload.reason = edReason.value.trim(); }
+  const r = await call('updateEmployee', payload); // V85: a duplicate name is refused (no "save anyway")
   if (!r.ok) { setMsg('edMsg', false, r.error.message); return; }
   closeDlg('empDlg');
-  setMsg('empListMsg', true, e.name + ' updated.');
+  setMsg('empListMsg', true, (nmChanged ? e.name + ' → ' + r.data.name : e.name) + ' updated.');
   // AUDIT2 A3: use the updated employee from the response — no reload
   const upd = r.data; upd.employeeId = String(upd.employeeId);
   await loadEmployees(EMPLOYEES.map(function (x) { return x.employeeId === upd.employeeId ? upd : x; }));
@@ -4239,7 +4258,8 @@ async function viewArchivedCard() {
     card.querySelectorAll('button, .tc-paid').forEach(function (x) { x.remove(); });
     const head = card.querySelector('.tc-head > div:last-child') || card.querySelector('.tc-head');
     if (head) head.appendChild(el('div', { style: 'text-align:right' }, [el('span', { className: 'arch-badge',
-      text: 'ARCHIVED COPY — HISTORICAL RECORD · v' + r.data.version + ' · ' + saipanDateTime(r.data.archivedAt) })]));
+      text: 'ARCHIVED COPY — HISTORICAL RECORD · v' + r.data.version + ' · ' + saipanDateTime(r.data.archivedAt) +
+        (r.data.card.archivedName ? ' · archived as ' + r.data.card.archivedName : '') })])); // V85
     out.appendChild(correctionBar(r.data));
     out.appendChild(card);
     document.getElementById('arPrint').disabled = false;
