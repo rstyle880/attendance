@@ -819,7 +819,7 @@
             </select></div>
           <div><label for="empHours">Hours required per day (after break)</label><input id="empHours" type="number" min="0" max="24" step="0.5" value="8"></div>
           <div><label for="empEmpStatus">Employment Status</label>
-            <select id="empEmpStatus"><option value="">Not set</option><option value="Regular">Regular</option><option value="Probationary">Probationary</option></select></div>
+            <select id="empEmpStatus"><option value="">Not set</option><option value="Regular">Regular</option><option value="Probationary">Probationary</option><option value="Part-Time">Part-Time</option><option value="Agency Staff">Agency Staff</option></select></div>
           <div><label>Employee Status</label><input value="Active (new employees start as Active)" disabled></div>
         </div>
         <div class="actions"><button class="btn btn-primary" onclick="run(this, createEmployee)">Add employee</button></div>
@@ -1109,7 +1109,7 @@
         <select id="edBreak"></select></div>
       <div class="full"><label for="edHours">Hours required per day (after break)</label><input id="edHours" type="number" min="0" max="24" step="0.5"></div>
       <div><label for="edEmpStatus">Employment Status</label>
-        <select id="edEmpStatus" onchange="edStatusChanged()"><option value="">Not set</option><option value="Regular">Regular</option><option value="Probationary">Probationary</option></select></div>
+        <select id="edEmpStatus" onchange="edStatusChanged()"><option value="">Not set</option><option value="Regular">Regular</option><option value="Probationary">Probationary</option><option value="Part-Time">Part-Time</option><option value="Agency Staff">Agency Staff</option></select></div>
       <div><label for="edStatus">Employee Status</label><select id="edStatus" onchange="edStatusChanged()"></select></div>
       <div class="full" id="edReasonWrap" style="display:none"><label for="edReason">Reason for the status change (required)</label>
         <input id="edReason" maxlength="200" placeholder="e.g. Passed probation · Maternity leave · Resigned, last day 9/30"></div>
@@ -4075,7 +4075,7 @@ async function saveEmpDialog() {
   }
   if (stChanged || esChanged) { // EMPMGMT E3: confirmation + reason
     if (edReason.value.trim().length < 3) { setMsg('edMsg', false, 'Enter a reason for the status change.'); edReason.focus(); return; }
-    if (esChanged && !edEmpStatus.value) { setMsg('edMsg', false, 'Choose Regular or Probationary.'); return; }
+    if (esChanged && !edEmpStatus.value) { setMsg('edMsg', false, 'Choose an Employment Status.'); return; }
     const lines = [];
     if (stChanged) lines.push('Employee Status: ' + statusLabel(e.status) + ' → ' + edStatus.value +
       (edStatus.value !== 'Active' ? '  (will NOT be able to use the kiosk)' : '  (can use the kiosk)'));
