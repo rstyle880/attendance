@@ -1061,7 +1061,7 @@
         <div class="grid">
           <div><label for="crEff">Effective from (pay-period start)</label><select id="crEff"></select></div>
           <div><label for="crRound">Rounding</label><select id="crRound"><option value="0">Exact minutes (no rounding)</option><option value="1">1 minute</option><option value="5">5 minutes</option><option value="6">6 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select></div>
-          <div><label for="crTie">When exactly halfway (e.g. :x5)</label><select id="crTie"><option value="DOWN">Round DOWN (0–5 down, 6–9 up for 10 min)</option><option value="UP">Round UP</option></select></div>
+          <div><label for="crTie">When exactly halfway (e.g. :x5)</label><select id="crTie"><option value="DOWN">Round DOWN (0–5 down, 6–9 up for 10 min)</option><option value="DOWN_EXACT">0–5 down, 6–9 exact minutes (break check keeps 6–9 up)</option><option value="UP">Round UP</option></select></div>
           <div><label for="crSec">Seconds</label><select id="crSec"><option value="true">Ignored</option><option value="false">Rounded to the nearest minute</option></select></div>
           <div><label for="crMethod">Break deduction</label><select id="crMethod"><option value="FIXED">Fixed break (TimeQPlus) — break taps don't change hours</option><option value="LONGER">Larger of fixed break or recorded break taps</option></select></div>
           <div><label>Break applies when a single IN/OUT pair is</label>
@@ -1733,7 +1733,7 @@ async function enterApp() {
       res = await Promise.all([loadEmployees(), loadVenues()]); // bootstrap failed: load one by one
     }
     if (!repStart.value) setPeriod(0);
-    showTab(tab); // now load that menu's data
+    showTab(currentTab); // now load that menu's data — NAVRACE: the menu the admin is on NOW (they may have moved while this loaded)
     if (!bs.ok) { // FALLBACK: what adminBootstrap would have given (after the menu's own requests)
       call('listDeptPos', {}).then(function (r) { if (r.ok) applyDeptPosMaster(r.data); });
       call('payPeriods', {}).then(function (r) { if (r.ok) applyServerPeriods(r.data); });
@@ -2798,7 +2798,7 @@ function markPeriod_() {
     b.classList.toggle('on', !!p && p.start === repStart.value && p.end === repEnd.value);
   });
 }
-async function loadReport() {
+async function loadReport(preloaded) { // V86 perf: preloaded = a refreshed individual card sent with a save (no second request)
   if (!repStart.value || !repEnd.value) { setMsg('repMsg', false, 'Choose the Current or the Previous pay period first.'); return; }
   if (SERVER_PERIODS && repStart.value < SERVER_PERIODS.previous.start) { // ARCHIVE: live = Current + Previous only
     setMsg('repMsg', false, 'Dates before ' + shortDate(SERVER_PERIODS.previous.start) + ' are archived. Open "Archived Time Cards".'); return;
@@ -2818,7 +2818,11 @@ async function loadReport() {
   setReportLoading(true);
   let result;
   try {
-    result = await call('timecardReport', {
+    // V86: a card sent with a save is used only if it is still the chosen employee and pay period (changed during the save = normal request)
+    const fresh = preloaded && preloaded.ok && preloaded.data && Array.isArray(preloaded.data.cards) && reportEmp &&
+      preloaded.data.startDate === repStart.value && preloaded.data.endDate === repEnd.value &&
+      preloaded.data.cards.every(function (c) { return String(c.employeeId) === String(reportEmp.employeeId); });
+    result = fresh ? preloaded : await call('timecardReport', {
       startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp ? reportEmp.employeeId : ''
     });
   } catch (e) { finishPhotoRefresh_('reportOut', photoRefresh, false); throw e; }
@@ -3354,9 +3358,13 @@ async function toggleDoubleShiftBreak(btn, r) {
   if (!confirm(approving ? 'I confirm that this employee actually took TWO 30-minute breaks on this approved double shift.\nDeduct 60 minutes total, for this IN/OUT pair only?' : 'Cancel this approval and restore the original break deduction?')) return;
   if (gen !== SESSION_GEN || !sessionToken) return;
   await run(btn, async function () {
+    // V86 perf: an individual live card is refreshed by the same request
+    const refresh = !ARCH.previewing && reportEmp && document.getElementById('reportOut').dataset.emp === String(reportEmp.employeeId)
+      ? { startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp.employeeId } : null;
     const res = await call('setDoubleShiftBreak', { inRawId: r.inRawId, outRawId: r.outRawId, expectedInTime: r.timeIn, expectedOutTime: r.timeOut,
-      approved: approving, adjustmentId: r.doubleShiftAdjustmentId || '', twoBreaksTaken: approving, confirm: true, reason: reason.trim() });
-    if (res.ok) await afterCardChange(); else setMsg(ARCH.previewing ? 'arMsg' : 'repMsg', false, res.error.message);
+      approved: approving, adjustmentId: r.doubleShiftAdjustmentId || '', twoBreaksTaken: approving, confirm: true, reason: reason.trim(), refresh: refresh });
+    if (res.ok) { if (refresh && res.refreshed) await loadReport(res.refreshed); else await afterCardChange(); }
+    else setMsg(ARCH.previewing ? 'arMsg' : 'repMsg', false, res.error.message);
   });
 }
 async function toggleWaiver(btn, r) {
@@ -3367,8 +3375,12 @@ async function toggleWaiver(btn, r) {
     if (reason.trim().length < 3) { alert('Please type a short reason.'); return; }
   } else if (!confirm('Undo "No break taken"? The break will be deducted again.')) return;
   await run(btn, async function () {
-    const res = await call('setBreakWaiver', { inRawId: r.inRawId, waived: !r.breakWaived, reason: reason.trim() });
-    if (res.ok) await afterCardChange(); else setMsg(ARCH.previewing ? 'arMsg' : 'repMsg', false, res.error.message);
+    // V86 perf: an individual live card is refreshed by the same request
+    const refresh = !ARCH.previewing && reportEmp && document.getElementById('reportOut').dataset.emp === String(reportEmp.employeeId)
+      ? { startDate: repStart.value, endDate: repEnd.value, employeeId: reportEmp.employeeId } : null;
+    const res = await call('setBreakWaiver', { inRawId: r.inRawId, waived: !r.breakWaived, reason: reason.trim(), refresh: refresh });
+    if (res.ok) { if (refresh && res.refreshed) await loadReport(res.refreshed); else await afterCardChange(); }
+    else setMsg(ARCH.previewing ? 'arMsg' : 'repMsg', false, res.error.message);
   });
 }
 function weekStartOf(dateStr) { // Sunday of that week
