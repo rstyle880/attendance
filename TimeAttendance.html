@@ -56,6 +56,8 @@
   .btn-secondary:hover { background: #f1f3f7; }
   .btn-danger-ghost { background: #fff; color: var(--red); border-color: #efc4c1; }
   .btn-danger-ghost:hover { background: #fdecea; }
+  .btn-reset { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; gap: 6px; }
+  .btn-reset:hover { background: #FEE2E2; }
   .btn-in { background: var(--green); color: #fff; min-width: 140px; }
   .btn-out { background: var(--red); color: #fff; min-width: 140px; }
   .btn-in:hover, .btn-out:hover { filter: brightness(1.1); }
@@ -708,7 +710,7 @@
             <div class="tc-row" style="justify-content:space-between;margin-top:12px">
               <div><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:0"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)" style="width:auto"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
                 <div class="sub" id="tcPhotosNote" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div></div>
-              <div style="text-align:right"><button class="btn btn-secondary btn-sm" id="repReset" onclick="resetTcEmployeeFilters_()">Reset Employee Filters</button>
+              <div style="text-align:right"><button class="btn btn-reset btn-sm" id="repReset" onclick="resetTcEmployeeFilters_()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset Employee Filters</button>
                 <div class="sub" style="margin:4px 0 0;font-size:11px">(clear employee, position, venue and photo option)</div></div>
             </div>
             <div class="sub" style="margin:6px 0 0;font-size:11px" title="Each employee's CURRENT position and default venue are used — an employee who moved is listed under the new one, also for earlier pay periods.">(position and venue = current)</div>
