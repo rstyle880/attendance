@@ -221,6 +221,55 @@
   .st-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff; white-space: nowrap; }
   .pin-dots { letter-spacing: 3px; font-weight: 800; color: #5b6475; }
   .pin-box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-top: 12px; background: #f9fafc; }
+  /* V89 UI: Edit Time → Add punches (one row per punch: #, Type, Date, Time, Venue, Remove) */
+  .te-add { margin-top: 12px; padding: 12px; border: 1px solid #dbe5f5; border-radius: 10px; background: #f0f5fd; }
+  .te-add-head { font-size: 14px; color: var(--ink); }
+  .te-add-row { margin-top: 8px; padding: 8px 12px; background: #fff; border: 1px solid #e3e9f3; border-radius: 8px; }
+  .te-add-row.bad { background: #fdecea; border-color: #f3b6b0; }
+  .te-add-grid { display: grid; grid-template-columns: 26px minmax(120px, 1fr) minmax(140px, 1.15fr) minmax(120px, 1fr) minmax(150px, 1.35fr) auto; gap: 10px; align-items: end; }
+  .te-add-num { font-weight: 700; font-size: 15px; padding-bottom: 10px; }
+  .te-f { display: flex; flex-direction: column; gap: 3px; margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
+  .te-f input, .te-f select { width: 100%; min-width: 0; }
+  .te-rm { min-height: 38px; background: #fff; color: #b91c1c; border-color: #f3b6b0; gap: 6px; }
+  .te-rm:hover { background: #fef2f2; }
+  .te-add-msg { color: #b91c1c; font-size: 12px; margin: 4px 0 0 36px; }
+  .te-add-msg:empty { display: none; }
+  .te-add-more { width: 100%; margin-top: 10px; background: #f7faff; color: var(--navy); border: 1px solid #c9d8f0; }
+  .te-add-more:hover { background: #e8f0fc; }
+  /* V89 UI: Edit Time → Existing punches (Day, Type, Original, Corrected date + time, Remove) */
+  .te-exist { padding: 12px; border: 1px solid #dbe5f5; border-radius: 10px; background: #fff; }
+  #tcEditTable { margin-top: 8px; table-layout: fixed; }
+  #tcEditTable th { background: #f0f5fd; border-bottom: 1px solid #dbe5f5; padding: 8px 10px; color: var(--ink); }
+  #tcEditTable td { padding: 6px 10px; border-bottom: 1px solid #edf1f7; }
+  #tcEditTable tbody tr:last-child td { border-bottom: 0; }
+  #tcEditTable th:nth-child(1) { width: 56px; } #tcEditTable th:nth-child(2) { width: 22%; } #tcEditTable th:nth-child(3) { width: 21%; }
+  #tcEditTable th:nth-child(5) { width: 76px; }
+  #tcEditTable input, #tcEditTable select { width: 100%; min-width: 0; padding: 7px 10px; }
+  #tcEditTable .te-c, #tcEditTable td:last-child { text-align: center; }
+  #tcEditTable input[type="checkbox"] { width: 16px; height: 16px; padding: 0; vertical-align: middle; }
+  .te-when { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(128px, 0.9fr); gap: 8px; }
+  @media (max-width: 760px) { /* smaller screens: each punch as a small card — Day + Original on top, inputs below */
+    #tcEditTable { table-layout: auto; }
+    #tcEditTable thead { display: none; }
+    #tcEditTable tr { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #edf1f7; }
+    #tcEditTable tbody tr:last-child { border-bottom: 0; }
+    #tcEditTable td { display: block; padding: 0; border: 0; }
+    #tcEditTable td:nth-child(1) { font-weight: 700; }
+    #tcEditTable td:nth-child(3) { color: var(--muted); }
+    #tcEditTable td:nth-child(1) { grid-row: 1; grid-column: 1; } #tcEditTable td:nth-child(3) { grid-row: 1; grid-column: 2; }
+    #tcEditTable td:last-child { grid-row: 1; grid-column: 3; }
+    #tcEditTable td:nth-child(2) { grid-row: 2; grid-column: 1 / -1; } #tcEditTable td:nth-child(4) { grid-row: 3; grid-column: 1 / -1; }
+    #tcEditTable td:last-child::before { content: 'Remove '; font-size: 12px; color: var(--muted); }
+    #tcEditTable td.empty { grid-column: 1 / -1; }
+  }
+  @media (max-width: 480px) { .te-when { grid-template-columns: 1fr; } }
+  @media (max-width: 760px) { /* smaller screens: number on top, two fields per line, Remove full width */
+    .te-add-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .te-add-num, .te-rm { grid-column: 1 / -1; }
+    .te-add-num { padding: 0; }
+    .te-add-msg { margin-left: 0; }
+  }
+  @media (max-width: 480px) { .te-add-grid { grid-template-columns: 1fr; } } /* phones: one field per line */
   .tc-incomplete { margin: 10px 0 4px; padding: 8px 12px; border: 2px solid #c62828; border-radius: 6px; background: #fdecea;
     color: #8c1d18; font-weight: 800; font-size: 13px; }
   .tc-totals { margin-top: 14px; display: grid; grid-template-columns: 1fr minmax(260px, 340px); gap: 16px; align-items: start; }
@@ -1166,22 +1215,23 @@
 
 <!-- ================= TIME CARD EDIT (TCEDIT) ================= -->
 <div class="dlg-overlay" id="tcEditDlg" role="dialog" aria-modal="true" aria-labelledby="tcEditTitle">
-  <div class="dlg" style="max-width:760px">
+  <div class="dlg" style="max-width:900px">
     <h2 id="tcEditTitle">Edit time</h2>
     <p class="sub" id="tcEditSub"></p>
-    <div class="table-wrap" style="max-height:46vh;overflow:auto"><table id="tcEditTable"><thead><tr><th>Day</th><th>Type</th><th>Original</th><th>Corrected time</th><th>Remove</th></tr></thead><tbody></tbody></table></div>
-    <div class="pin-box" style="margin-top:10px">
-      <b>Add a punch</b> <span class="sub" style="margin:0">(missing punch, or time entered in advance up to 14 days ahead)</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
-        <select id="teAddDir" style="max-width:130px"><option value="">— none —</option><option value="IN">Clock IN</option><option value="OUT">Clock OUT</option></select>
-        <input id="teAddDate" type="date" style="max-width:170px"><input id="teAddTime" type="time" style="max-width:130px">
-        <select id="teAddVenue" style="max-width:190px"></select>
-      </div>
+    <div class="te-exist">
+      <div class="te-add-head"><b>Existing punches</b> <span class="sub" style="margin:0">(edit or remove)</span></div>
+      <table id="tcEditTable"><thead><tr><th>Day</th><th>Type</th><th>Original</th><th>Corrected time</th><th class="te-c">Remove</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="te-add">
+      <div class="te-add-head"><b>Add punches</b> <span class="sub" style="margin:0">(missing punch, or time entered in advance up to 14 days ahead)</span></div>
+      <div id="teAddRows"></div>
+      <button class="btn te-add-more" id="teAddMore" type="button" onclick="teAddRow_()">+ Add Another Punch</button>
+      <div class="sub" style="margin:6px 0 0;font-size:12px">Added punches are saved together: if one row has a problem, none is saved.</div>
     </div>
     <div class="grid" style="margin-top:10px"><div class="full"><label for="teReason">Reason (optional for edits/additions; required for removals)</label><input id="teReason" maxlength="200" placeholder="e.g. Employee forgot to clock out — confirmed by supervisor"></div></div>
     <div id="teMsg" class="msg" style="white-space:pre-line"></div>
     <div class="actions">
-      <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save corrections</button>
+      <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save All Corrections</button>
       <button class="btn btn-secondary" id="teCancel" onclick="tcEditClose()">Cancel</button>
     </div>
   </div>
@@ -1520,7 +1570,7 @@ const SHAPES = {
   createEmployee: has('employeeId', 'name'), updateEmployee: has('employeeId'), archiveEmployee: has('employeeId'), unarchiveEmployee: has('employeeId'),
   unlockEmployeePin: has('unlocked'), createVenue: has('venueId'), registerTerminal: has('terminalId', 'secret'),
   setTerminalButtonSound: has('buttonSound'), setTerminalCamera: has('camera'), removeTerminal: has('terminalId', 'status'),
-  addMissedPunch: has('rawId'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'), setDoubleShiftBreak: has('inRawId', 'approved', 'adjustmentId'),
+  addMissedPunch: has('rawId'), addMissedPunchBatch: has('rawIds', 'count'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'), setDoubleShiftBreak: has('inRawId', 'approved', 'adjustmentId'),
   addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
   completePinLockReview: has('employeeId', 'incidentId', 'reviewed'),
   openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
@@ -1545,7 +1595,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
+const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|addMissedPunchBatch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -5042,24 +5092,21 @@ function openTcEdit(c, startDate, endDate, saved) {
     if (r.timeIn && r.inRawId) items.push({ rawId: r.inRawId, dir: 'IN', iso: r.timeIn, day: r.date });
     if (r.timeOut && r.outRawId) items.push({ rawId: r.outRawId, dir: 'OUT', iso: r.timeOut, day: r.date });
   });
-  if (!items.length) emptyRow(tb, 5, 'No punches in this pay period — use "Add a punch" below.');
+  if (!items.length) emptyRow(tb, 5, 'No punches in this pay period — use "Add punches" below.');
   items.forEach(function (it) {
     const v = tz(it.iso);
-    const d = el('input', { type: 'date', value: v.date, style: 'max-width:150px' }), t = el('input', { type: 'time', value: v.time, style: 'max-width:110px' });
+    const d = el('input', { type: 'date', value: v.date, title: 'Corrected date' }), t = el('input', { type: 'time', value: v.time, title: 'Corrected time' });
     const rm = el('input', { type: 'checkbox', title: 'Remove this punch' });
-    const ty = el('select', { title: 'Punch type', style: 'max-width:120px' }, [el('option', { value: 'IN', text: 'Clock IN' }), el('option', { value: 'OUT', text: 'Clock OUT' })]); // V76
+    const ty = el('select', { title: 'Punch type' }, [el('option', { value: 'IN', text: 'Clock IN' }), el('option', { value: 'OUT', text: 'Clock OUT' })]); // V76
     ty.value = it.dir;
     it.orig = v; it.inputs = { d: d, t: t, rm: rm, ty: ty };
-    const tr = addRow(tb, [shortDate(it.day), ty, saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { style: 'display:flex;gap:6px' }, [d, t]), rm]);
+    const tr = addRow(tb, [shortDate(it.day), ty, saipanTimeOnly(it.iso) + ' (' + shortDate(v.date) + ')', el('div', { className: 'te-when' }, [d, t]), rm]); // V89 UI
     const mark = function () { tr.style.background = rm.checked ? '#fde8e8' : (d.value !== v.date || t.value !== v.time || ty.value !== it.dir) ? '#fff7e6' : ''; };
     d.oninput = t.oninput = rm.onchange = ty.onchange = mark;
     it.mark = mark; // V79: used when a failed change is put back
   });
   TE.items = items;
-  document.getElementById('teAddDir').value = ''; document.getElementById('teAddDate').value = startDate; document.getElementById('teAddTime').value = '';
-  const vs = document.getElementById('teAddVenue'); vs.innerHTML = '';
-  (VENUES || []).forEach(function (v) { vs.appendChild(el('option', { value: v.venueId, text: v.venueName || v.venueId })); });
-  if (c.defaultVenueId) vs.value = c.defaultVenueId;
+  document.getElementById('teAddRows').innerHTML = ''; teAddRow_();
   document.getElementById('teReason').value = ''; clearMsg('teMsg');
   openDlg('tcEditDlg');
 }
@@ -5071,9 +5118,13 @@ function tcEditToRestore_(results, card) {
     const key = a.date + 'T' + a.time;
     return !!(card && card.rows || []).some(function (r) { return String((a.dir === 'IN' ? r.timeIn : r.timeOut) || '').indexOf(key) === 0; });
   };
+  out.adds = []; // V89: every failed added punch (out.add = the first, as before)
   results.forEach(function (r) {
     if (r.ok) return;
-    if (r.kind === 'add') { if (shows(r)) out.alreadySaved++; else out.add = { dir: r.dir, date: r.date, time: r.time, venueId: r.venueId }; }
+    if (r.kind === 'add') {
+      if (shows(r)) out.alreadySaved++;
+      else { const a = { dir: r.dir, date: r.date, time: r.time, venueId: r.venueId }; out.adds.push(a); if (!out.add) out.add = a; }
+    }
     else out.edits.push({ rawId: r.rawId, remove: r.kind === 'remove', date: r.date || '', time: r.time || '', dir: r.dir || '' });
   });
   return out;
@@ -5085,15 +5136,78 @@ function tcEditResults_(results) {
     ? saved + ' saved, ' + failed + ' not saved:\n' + lines.join('\n') + '\nThe ones not saved are filled in again below — check them and Save again.'
     : '✓ ' + saved + ' correction' + (saved === 1 ? '' : 's') + ' saved.\n' + lines.join('\n') };
 }
-function tcEditDirty_(rows, addDir) {
-  return !!addDir || rows.some(function (r) { return r.rm || r.d !== r.od || r.t !== r.ot || r.ty !== r.oty; });
+function tcEditDirty_(rows, adds) {
+  if (!Array.isArray(adds)) adds = [{ dir: adds || '' }]; // V89: list of added punches (older callers: the type)
+  return adds.some(function (a) { return !!(a.dir || a.time); }) || rows.some(function (r) { return r.rm || r.d !== r.od || r.t !== r.ot || r.ty !== r.oty; });
+}
+function teEditRows_() {
+  return (TE && TE.items || []).map(function (it) { const f = it.inputs;
+    return { d: f.d.value, t: f.t.value, ty: f.ty.value, rm: f.rm.checked, od: it.orig.date, ot: it.orig.time, oty: it.dir }; });
 }
 async function tcEditClose() {
-  const rows = (TE && TE.items || []).map(function (it) { const f = it.inputs;
-    return { d: f.d.value, t: f.t.value, ty: f.ty.value, rm: f.rm.checked, od: it.orig.date, ot: it.orig.time, oty: it.dir }; });
-  if (tcEditDirty_(rows, document.getElementById('teAddDir').value) && !await askConfirm('You have unsaved changes. Discard them and close?', 'Discard & close', 'Keep editing')) return;
+  if (tcEditDirty_(teEditRows_(), teAddValues_()) && !await askConfirm('You have unsaved changes. Discard them and close?', 'Discard & close', 'Keep editing')) return;
   closeDlg('tcEditDlg');
 }
+// V89: Add a punch — any number of rows (type, date, time, venue, Remove), saved together in ONE all-or-nothing request
+function teAddRow_(v) {
+  v = v || {};
+  const ty = el('select', { title: 'Punch type' }, [el('option', { value: '', text: '— none —' }), el('option', { value: 'IN', text: 'Clock IN' }), el('option', { value: 'OUT', text: 'Clock OUT' })]);
+  const d = el('input', { type: 'date' }), t = el('input', { type: 'time' });
+  const vs = el('select', { title: 'Venue' });
+  (VENUES || []).forEach(function (x) { vs.appendChild(el('option', { value: x.venueId, text: x.venueName || x.venueId })); });
+  const field = function (label, input) { return el('label', { className: 'te-f' }, [el('span', { text: label }), input]); };
+  const rm = el('button', { className: 'btn btn-sm te-rm', type: 'button', title: 'Remove this row', onclick: function () { teAddRemove_(row); } });
+  rm.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>Remove';
+  const num = el('b', { className: 'te-add-num' }), msg = el('div', { className: 'te-add-msg' });
+  const row = el('div', { className: 'te-add-row' }, [
+    el('div', { className: 'te-add-grid' }, [num, field('Type', ty), field('Date', d), field('Time', t), field('Venue', vs), rm]), msg]);
+  ty.value = v.dir || ''; d.value = v.date || (TE && TE.startDate) || ''; t.value = v.time || '';
+  if (v.venueId || (TE && TE.c && TE.c.defaultVenueId)) vs.value = v.venueId || TE.c.defaultVenueId;
+  row.f = { ty: ty, d: d, t: t, vs: vs, msg: msg };
+  document.getElementById('teAddRows').appendChild(row);
+  teAddNumber_();
+  return row;
+}
+function teAddRemove_(row) {
+  const box = document.getElementById('teAddRows');
+  row.remove();
+  if (!box.children.length) teAddRow_(); // keep one empty row
+  teAddNumber_();
+}
+function teAddNumber_() {
+  Array.prototype.forEach.call(document.getElementById('teAddRows').children, function (r, i) { r.f && (r.querySelector('b').textContent = (i + 1) + '.'); });
+}
+function teAddValues_() {
+  return Array.prototype.map.call(document.getElementById('teAddRows').children, function (r) {
+    return { dir: r.f.ty.value, date: r.f.d.value, time: r.f.t.value, venueId: r.f.vs.value };
+  });
+}
+/** Mark rows with problems ([{ row, message }], row = 1-based); clears the others. */
+function teAddMark_(problems) {
+  Array.prototype.forEach.call(document.getElementById('teAddRows').children, function (r, i) {
+    const p = (problems || []).find(function (x) { return x.row === i + 1; });
+    r.f.msg.textContent = p ? p.message : ''; r.classList.toggle('bad', !!p);
+  });
+}
+/** Rows to send (an untouched row — no type, no time — is skipped) and the problems found before sending. */
+function teAddCheck_(rows) {
+  const entries = [], errors = [];
+  rows.forEach(function (r, i) {
+    if (!r.dir && !r.time) return;
+    const row = i + 1;
+    if (!r.dir || !r.date || !r.time || !r.venueId) errors.push({ row: row, message: 'Enter the type, date, time and venue.' });
+    else {
+      const twin = entries.find(function (x) { return x.date === r.date && x.time === r.time; });
+      if (twin) errors.push({ row: row, message: 'Duplicate — same time as row ' + twin.row + '.' });
+    }
+    entries.push({ row: row, direction: r.dir, date: r.date, time: r.time, venueId: r.venueId });
+  });
+  return { entries: entries, errors: errors };
+}
+window.addEventListener('beforeunload', function (ev) { // V89: closing the page with unsaved Edit Time entries asks first
+  if (!TE || !document.getElementById('tcEditDlg').classList.contains('open')) return;
+  if (tcEditDirty_(teEditRows_(), teAddValues_())) { ev.preventDefault(); ev.returnValue = ''; }
+});
 // Put the failed changes back into the rebuilt dialog. Returns the ones whose punch is no longer listed.
 function tcEditRestore_(r) {
   const lost = [];
@@ -5104,7 +5218,7 @@ function tcEditRestore_(r) {
     else { if (e.date) it.inputs.d.value = e.date; if (e.time) it.inputs.t.value = e.time; if (e.dir) it.inputs.ty.value = e.dir; }
     it.mark();
   });
-  if (r.add) { teAddDir.value = r.add.dir; teAddDate.value = r.add.date; teAddTime.value = r.add.time; if (r.add.venueId) teAddVenue.value = r.add.venueId; }
+  if (r.adds && r.adds.length) { document.getElementById('teAddRows').innerHTML = ''; r.adds.forEach(function (a) { teAddRow_(a); }); }
   return lost;
 }
 async function saveTcEdit() {
@@ -5120,11 +5234,16 @@ async function saveTcEdit() {
         text: dirLabel(it.dir) + (dir ? ' → ' + dirLabel(dir) : '') + ' ' + it.orig.time + ' (' + shortDate(it.orig.date) + ') → ' + f.t.value + ' (' + shortDate(f.d.value) + ')' });
     }
   });
-  if (teAddDir.value) {
-    if (!teAddDate.value || !teAddTime.value) { setMsg('teMsg', false, 'Enter the date and time of the punch to add.'); return; }
-    changes.push({ kind: 'add', dir: teAddDir.value, date: teAddDate.value, time: teAddTime.value, venueId: teAddVenue.value,
-      text: 'Add ' + dirLabel(teAddDir.value) + ' ' + teAddTime.value + ' (' + shortDate(teAddDate.value) + ')' });
+  const adds = teAddCheck_(teAddValues_()); // V89
+  teAddMark_(adds.errors);
+  if (adds.errors.length) { setMsg('teMsg', false, 'Please fix the added punch rows marked in red.'); return; }
+  if (adds.entries.length && changes.length) {
+    setMsg('teMsg', false, 'Please save the changes to existing punches first, then the added punches (added punches are saved all together, all or nothing).'); return;
   }
+  adds.entries.forEach(function (a) {
+    changes.push({ kind: 'add', dir: a.direction, date: a.date, time: a.time, venueId: a.venueId,
+      text: 'Add ' + dirLabel(a.direction) + ' ' + a.time + ' (' + shortDate(a.date) + ')' });
+  });
   if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
   if (changes.some(function (x) { return x.kind === 'remove'; }) && reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for removing a punch.'); teReason.focus(); return; }
   if (!await askConfirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason, 'Save corrections', 'Cancel')) return;
@@ -5136,11 +5255,24 @@ async function saveTcEdit() {
   const errs = [];
   const results = []; // V79
   const savedDates = [];
+  const addX = changes.filter(function (x) { return x.kind === 'add'; });
+  if (addX.length) { // V89: ONE request for all added punches — the server saves all of them or none
+    const r = await call('addMissedPunchBatch', { employeeId: TE.c.employeeId, reason: reason,
+      entries: addX.map(function (x) { return { direction: x.dir, date: x.date, time: x.time, venueId: x.venueId }; }) });
+    if (!r.ok && /^(BATCH_INVALID|BUSY|VALIDATION_ERROR|FORBIDDEN)$/.test(r.error.code)) { // certainly nothing saved: keep the rows as typed
+      teAddMark_(r.error.rows || []); setMsg('teMsg', false, r.error.message); return;
+    }
+    addX.forEach(function (x) {
+      results.push({ kind: 'add', ok: !!r.ok, text: x.text, msg: r.ok ? '' : r.error.message, rawId: '', date: x.date, time: x.time, dir: x.dir, venueId: x.venueId });
+      if (!r.ok) errs.push(x.text + ': ' + r.error.message); else savedDates.push(x.date);
+    });
+    if (r.ok) rememberPinFixDates_(pinFix, savedDates);
+  }
   for (const x of changes) {
+    if (x.kind === 'add') continue;
     let r;
     if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason, ...(x.dir ? { direction: x.dir } : {}) });
-    else if (x.kind === 'remove') r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
-    else r = await call('addMissedPunch', { employeeId: TE.c.employeeId, direction: x.dir, date: x.date, time: x.time, reason: reason, venueId: x.venueId });
+    else r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
     results.push({ kind: x.kind, ok: !!r.ok, text: x.text, msg: r.ok ? '' : r.error.message, rawId: x.it ? x.it.rawId : '',
       date: x.date || '', time: x.time || '', dir: x.dir || '', venueId: x.venueId || '' });
     if (!r.ok) errs.push(x.text + ': ' + r.error.message);
@@ -5165,7 +5297,7 @@ async function saveTcEdit() {
       const back = tcEditToRestore_(results, fresh);
       openTcEdit(fresh, data.startDate, data.endDate, saved);
       const lost = tcEditRestore_(back);
-      if (back.edits.length || back.add) document.getElementById('teReason').value = reason;
+      if (back.edits.length || back.adds.length) document.getElementById('teReason').value = reason;
       setMsg('teMsg', !sum.failed, sum.text + (back.alreadySaved ? '\n(' + back.alreadySaved + ' "not saved" addition is already on the time card — not filled in again.)' : '') +
         (lost.length ? '\n(' + lost.length + ' correction(s) could not be filled in again — the punch changed meanwhile; please re-check.)' : ''));
     } else if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n'));
