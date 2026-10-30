@@ -1226,7 +1226,7 @@
       <div class="full" id="admNewUserBox"><label for="admNewUser">New username</label><input id="admNewUser" maxlength="30" autocomplete="off" placeholder="3–30 letters / numbers, no spaces"></div>
       <div class="full" id="admNewPwBox"><label for="admNewPw">New password (give it to the person privately)</label><input id="admNewPw" type="password" autocomplete="new-password" placeholder="at least 8 characters"></div>
       <div class="full" id="admNewPw2Box"><label for="admNewPw2">Repeat new password</label><input id="admNewPw2" type="password" autocomplete="new-password"></div>
-      <div class="full"><label for="admCur">Your current password</label><input id="admCur" type="password" autocomplete="current-password"></div>
+      <div class="full" id="admCurBox"><label for="admCur">Your current password</label><input id="admCur" type="password" autocomplete="current-password"></div>
     </div>
     <div id="admMsg" class="msg"></div>
     <div class="actions">
@@ -3964,7 +3964,7 @@ async function loadAdmins() {
     const self = a.username.toLowerCase() === me, active = a.status === 'Active', full = a.role === 'Full';
     const btn = function (text, op, disabled, title) {
       const b = el('button', { className: 'btn btn-secondary btn-sm', text: text, title: title || '' });
-      b.disabled = !!disabled; b.onclick = function () { openAdm(op, a); }; return b;
+      b.disabled = !!disabled; b.onclick = function () { openAdm(op, a, self); }; return b;
     };
     tb.appendChild(el('tr', {}, [
       el('td', {}, [el('b', { text: a.username }), self ? el('span', { className: 'sub', style: 'margin-left:6px', text: '(you)' }) : el('span')]),
@@ -3978,8 +3978,8 @@ async function loadAdmins() {
     ]));
   });
 }
-function openAdm(op, a) {
-  ADM_EDIT = { op: op, a: a };
+function openAdm(op, a, self) {
+  ADM_EDIT = { op: op, a: a, noCur: op === 'resetPassword' && !self }; // V88: resetting ANOTHER admin needs no current password (server checks Full Admin)
   const what = { resetPassword: 'Reset password', rename: 'Change username',
     setStatus: a.status === 'Active' ? 'Deactivate account' : 'Activate account', setRole: a.role === 'Full' ? 'Make Limited Admin' : 'Make Full Admin' }[op];
   document.getElementById('admTitle').textContent = what + ' — ' + a.username;
@@ -3988,21 +3988,25 @@ function openAdm(op, a) {
     : op === 'rename' ? 'The person logs in with the new username; open sessions end now.' : 'The old password stops working at once; the account is unlocked.';
   document.getElementById('admNewUserBox').hidden = op !== 'rename';
   document.getElementById('admNewPwBox').hidden = document.getElementById('admNewPw2Box').hidden = op !== 'resetPassword';
+  document.getElementById('admCurBox').hidden = ADM_EDIT.noCur;
   ['admNewUser', 'admNewPw', 'admNewPw2', 'admCur'].forEach(function (id) { document.getElementById(id).value = ''; });
   if (op === 'rename') document.getElementById('admNewUser').value = a.username;
   clearMsg('admMsg'); openDlg('admDlg');
 }
 async function saveAdm() {
   const e = ADM_EDIT; if (!e) return;
-  const p = { targetAdminId: e.a.adminId, op: e.op, currentPassword: document.getElementById('admCur').value };
+  const p = { targetAdminId: e.a.adminId, op: e.op };
+  if (!e.noCur) p.currentPassword = document.getElementById('admCur').value;
   if (e.op === 'resetPassword') {
     p.newPassword = document.getElementById('admNewPw').value;
+    if (!p.newPassword || !document.getElementById('admNewPw2').value) { setMsg('admMsg', false, 'Enter the new password twice.'); return; }
+    if (p.newPassword.length < 8) { setMsg('admMsg', false, 'The new password must be at least 8 characters.'); return; }
     if (p.newPassword !== document.getElementById('admNewPw2').value) { setMsg('admMsg', false, 'The two new passwords are not the same.'); return; }
   }
   if (e.op === 'rename') p.newUsername = document.getElementById('admNewUser').value.trim();
   if (e.op === 'setStatus') p.status = e.a.status === 'Active' ? 'Inactive' : 'Active';
   if (e.op === 'setRole') p.role = e.a.role === 'Full' ? 'Limited' : 'Full';
-  if (!p.currentPassword) { setMsg('admMsg', false, 'Enter your current password.'); return; }
+  if (!e.noCur && !p.currentPassword) { setMsg('admMsg', false, 'Enter your current password.'); return; }
   const r = await call('manageAdmin', p);
   ['admNewPw', 'admNewPw2', 'admCur'].forEach(function (id) { document.getElementById(id).value = ''; });
   if (!r.ok) { setMsg('admMsg', false, r.error.message); return; }
