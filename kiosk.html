@@ -1727,7 +1727,8 @@ function intentEquivalent_(old, input, pending) {
   if (pending.has(old.status)) return true;
   if (old.status !== 'SERVER_CONFIRMED') return false;
   if (input.action === 'BREAK') return input.op !== 'AUTO' && old.op === input.op; // unchanged
-  return Date.parse(input.at) - Date.parse(old.at) < 16 * 3600000;
+  // V93: a confirmed same-type tap counts as a repeat only within 30 min; later taps go straight to the server's state rules
+  return Date.parse(input.at) - Date.parse(old.at) < 30 * 60000;
 }
 function queueBelongsHere(x, c) { return !!(x.terminalId && x.url && x.terminalId === c.terminalId && x.url === c.url); }
 const VAULT_WAIT_MS = 5000; // the longest the kiosk waits for the PIN vault
