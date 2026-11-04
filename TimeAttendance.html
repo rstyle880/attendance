@@ -133,6 +133,9 @@
   .dlg-overlay.open { display: flex; }
   .dlg { width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; background: #fff; border-radius: 12px; padding: 22px 24px; box-shadow: 0 16px 50px rgba(0,0,0,.35); }
   .dlg h2 { margin-bottom: 4px; }
+  .pin-acts { flex-wrap: nowrap; } /* V96 PIN panel: one row on desktop */
+  .pin-acts .btn { display: inline-flex; align-items: center; gap: 6px; line-height: 1.2; text-align: center; min-width: 0; padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+  @media (max-width: 600px) { .pin-acts { flex-wrap: wrap; } }
 
   /* ---- alert pop-up ---- */
   .alert-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(10,16,30,.72); display: none; align-items: center; justify-content: center; padding: 20px; }
@@ -1248,6 +1251,31 @@
   </div>
 </div>
 
+<!-- ================= PIN LOCKOUT (V96: unlock only — never changes attendance) ================= -->
+<div class="dlg-overlay" id="lockDlg" role="dialog" aria-modal="true" aria-labelledby="lockDlgTitle">
+  <div class="dlg" style="max-width:600px">
+    <h2 id="lockDlgTitle">Fix PIN Lockout</h2>
+    <p style="margin:8px 0 2px"><strong id="lockDlgName"></strong></p>
+    <p class="sub" style="margin:0">Employee ID <span id="lockDlgId"></span></p>
+    <p id="lockDlgStatus" style="margin:10px 0;font-weight:600"></p>
+    <p id="lockDlgAttempts" class="sub" style="margin:0 0 6px;white-space:pre-line"></p>
+    <div class="grid">
+      <div class="full"><label for="lockDlgMethod">How did you verify the employee’s identity?</label>
+        <select id="lockDlgMethod"><option value="">Choose…</option><option>In person</option><option>Supervisor confirmed</option><option>Phone call</option></select></div>
+      <div class="full"><label style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);margin:0">
+        <input type="checkbox" id="lockDlgVerified" style="width:auto;margin:0"> I verified this is the employee, not someone else using their ID.</label></div>
+    </div>
+    <p class="sub" style="margin-top:10px">Unlocking lets the employee try their PIN again at the kiosk. It does not create or change attendance. A missing clock-in or clock-out stays as its own alert.</p>
+    <div class="actions pin-acts">
+      <button class="btn btn-in" id="lockDlgUnlock" onclick="run(this, unlockFromPinPanel)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>Unlock PIN</button>
+      <button class="btn btn-secondary" id="lockDlgAddPunch" onclick="addPunchFromPinPanel()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8 14h3"/></svg><span id="lockDlgAddLabel">Add Missed<br>Clock-In or Clock-Out</span></button>
+      <button class="btn btn-secondary" onclick="pinPanelCard()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h10M7 14h6"/></svg><span>View<br>Time Card</span></button>
+      <button class="btn btn-secondary" onclick="closeDlg('lockDlg')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>Close</button>
+    </div>
+    <div id="lockDlgMsg" class="msg"></div>
+  </div>
+</div>
+
 <!-- ================= MY ACCOUNT (MYACCT) ================= -->
 <div class="dlg-overlay" id="myAcctDlg" role="dialog" aria-modal="true" aria-labelledby="myAcctTitle">
   <div class="dlg" style="max-width:460px">
@@ -1572,7 +1600,7 @@ const SHAPES = {
   setTerminalButtonSound: has('buttonSound'), setTerminalCamera: has('camera'), removeTerminal: has('terminalId', 'status'),
   addMissedPunch: has('rawId'), addMissedPunchBatch: has('rawIds', 'count'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'), setDoubleShiftBreak: has('inRawId', 'approved', 'adjustmentId'),
   addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
-  completePinLockReview: has('employeeId', 'incidentId', 'reviewed'),
+  completePinLockReview: has('employeeId', 'incidentId', 'reviewed'), unlockPinLockIncident: has('employeeId', 'incidentId', 'reviewed'), // V96
   openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
   setupDeptPosMasters: has('departments', 'positions'), addDepartment: has('departments', 'positions'), addPosition: has('departments', 'positions'),
   updateDepartment: has('departments', 'positions'), updatePosition: has('departments', 'positions'), setDepartmentStatus: has('departments', 'positions'),
@@ -1595,7 +1623,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|addMissedPunchBatch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
+const SAVE_ACTIONS = /^(unlockPinLockIncident|completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|addMissedPunchBatch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -2627,16 +2655,68 @@ function closePinFix() {
   PIN_FIX = null;
   document.getElementById('pinFixContext').style.display = 'none';
 }
+// V96: Fix Now on a PIN lockout opens the small PIN panel. The old review flow above (PIN_FIX) is no longer opened; its hooks
+// in Add missed punch / Edit punch stay inert. ponytail: remove PIN_FIX and #pinFixContext in a cleanup release.
+let PIN_PANEL = null;
 function fixPinLockAlert(a) {
-  const emp = EMPLOYEES.find(function (e) { return e.employeeId === String(a.employeeId); });
-  if (!emp || !a.rawId) { toast('Employee or incident not found. Refresh Alerts before reviewing.'); return; }
-  closePinFix(); closeAlertPopup(); showTab('clock'); selectClockEmployee(emp);
-  PIN_FIX = { employeeId: emp.employeeId, incidentId: String(a.rawId), date: saipanDate(new Date(a.time)), gen: SESSION_GEN, corrected: false };
-  mpDir.value = ''; mpDate.value = ''; mpTime.value = ''; mpReason.value = '';
-  if (a.venueId) clkVenue.value = a.venueId;
-  document.getElementById('pinFixDetails').textContent = emp.name + ' (ID ' + emp.employeeId + ') — lockout: ' + a.time + ' — incident ' + a.rawId;
-  document.getElementById('pinFixContext').style.display = '';
+  if (!a.rawId) { toast('Incident not found. Refresh Alerts.'); return; }
+  closeAlertPopup();
+  PIN_PANEL = { employeeId: String(a.employeeId), incidentId: String(a.rawId), date: saipanDate(new Date(a.time)), gen: SESSION_GEN };
+  document.getElementById('lockDlgName').textContent = a.name;
+  document.getElementById('lockDlgId').textContent = a.employeeId;
+  document.getElementById('lockDlgStatus').textContent = a.stillLocked ? '🔒 PIN locked until ' + saipanTimeOnly(a.lockedUntil) + ' (locked out ' + saipanDateTime(a.time) + ')'
+    : 'Lock has expired (locked out ' + saipanDateTime(a.time) + '). Unlock to clear the alert and the wrong-PIN count.';
+  // V96b: the kiosk attempts behind this lockout; the first IN / OUT attempt can be added as a missed punch (optional)
+  const tries = a.attempts || [], first = tries.find(function (x) { return x.direction === 'IN' || x.direction === 'OUT'; });
+  PIN_PANEL.attempt = first || null;
+  document.getElementById('lockDlgAddLabel').innerHTML = 'Add Missed<br>' + (!first ? 'Clock-In or Clock-Out' : first.direction === 'IN' ? 'Clock-In' : 'Clock-Out'); // V96d
+  document.getElementById('lockDlgAttempts').textContent = tries.length ? 'Kiosk attempts: ' + tries.map(function (x) {
+    return dirLabel(x.direction) + ' ' + saipanTimeOnly(x.at); }).join(', ') + ' (' + venueName(tries[0].venueId) + ')' : '';
+  document.getElementById('lockDlgMethod').value = ''; document.getElementById('lockDlgVerified').checked = false;
+  document.getElementById('lockDlgUnlock').style.display = '';
+  clearMsg('lockDlgMsg');
+  openDlg('lockDlg');
+}
+async function unlockFromPinPanel() {
+  const c = PIN_PANEL;
+  if (!c || c.gen !== SESSION_GEN || c.done) return;
+  const method = document.getElementById('lockDlgMethod').value;
+  if (!method || !document.getElementById('lockDlgVerified').checked) { setMsg('lockDlgMsg', false, 'Verify the employee’s identity first: choose how, and tick the box.'); return; }
+  clearMsg('lockDlgMsg');
+  const r = await call('unlockPinLockIncident', { employeeId: c.employeeId, incidentId: c.incidentId, verified: true, verifyMethod: method });
+  if (PIN_PANEL !== c) return;
+  if (!r.ok) { setMsg('lockDlgMsg', false, r.error.message); return; }
+  if (r.data.employeeId !== c.employeeId || r.data.incidentId !== c.incidentId || r.data.reviewed !== true) { setMsg('lockDlgMsg', false, 'Unlock was not confirmed. Refresh Alerts and try again.'); return; }
+  c.done = true;
+  document.getElementById('lockDlgUnlock').style.display = 'none';
+  const older = r.data.outcome === 'REVIEWED'; // V96c: an older incident — the PIN lock (if any) belongs to a newer lockout
+  document.getElementById('lockDlgStatus').textContent = older ? '✔ Resolved' : '🔓 Unlocked';
+  setMsg('lockDlgMsg', true, r.data.already ? 'Already resolved before. No attendance records were changed.'
+    : older ? 'This earlier lockout is resolved. A newer lockout for this employee stays in Alerts with its own Fix Now. No attendance records were changed.'
+    : 'PIN unlocked. The employee can try again at the kiosk. No attendance records were changed.');
+  speak('Done');
+  await checkAlerts(true);
+}
+// Opens the normal Add missed punch form, prefilled with the first attempt when there is one (else the employee and lockout date);
+// the admin checks it and presses Save (audited as usual).
+function addPunchFromPinPanel() {
+  const c = PIN_PANEL; if (!c) return;
+  const x = c.attempt || { direction: '', at: c.date + 'T00:00', venueId: '' };
+  const emp = EMPLOYEES.find(function (e) { return e.employeeId === c.employeeId; });
+  if (!emp) { toast('Employee not found. Refresh the page.'); return; }
+  closeDlg('lockDlg');
+  showTab('clock');
+  selectClockEmployee(emp);
+  mpDir.value = x.direction; mpDate.value = x.at.slice(0, 10); mpTime.value = c.attempt ? x.at.slice(11, 16) : '';
+  mpReason.value = c.attempt ? 'Kiosk PIN lockout — tried to ' + dirLabel(x.direction).toLowerCase() + ' at ' + saipanTimeOnly(x.at) : 'Kiosk PIN lockout';
+  if (x.venueId) document.getElementById('clkVenue').value = x.venueId;
+  setMsg('mpMsg', false, 'Check before saving: a failed PIN attempt does not prove who was at the kiosk. Confirm with the employee (or CCTV), adjust the time if needed, then press Add missed punch.');
   document.getElementById('missedBlock').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function pinPanelCard() {
+  const c = PIN_PANEL; if (!c) return;
+  closeDlg('lockDlg');
+  openReportCard({ employeeId: c.employeeId, reportDate: c.date });
 }
 function pinFixForEmployee_(id) {
   const c = pinFixCurrent_();
