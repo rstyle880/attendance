@@ -244,6 +244,10 @@
   .result .title { font-size: 26px; font-weight: 800; }
   .result .name { font-size: 22px; font-weight: 700; margin: 6px 0; color: #dfe8ff; }
   .result .detail { font-size: 16px; color: var(--muted); line-height: 1.45; }
+  .lock-box { margin: 12px auto 10px; padding: 12px 18px; border-radius: 12px; background: rgba(0,0,0,.28); max-width: 360px; } /* V97 */
+  .lock-label { font-size: 15px; color: var(--muted); }
+  .lock-time { font-size: 36px; font-weight: 800; color: #fff; letter-spacing: .5px; }
+  .pin-id { text-align: center; font-size: 18px; font-weight: 700; color: var(--muted); letter-spacing: 1px; margin: -2px 0 8px; } /* V97 */
   .result button { margin-top: 18px; }
 
   .rec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -398,6 +402,7 @@
     </div>
     <div id="screenPin" class="hidden">
       <div class="ph"><span class="pill" id="pillPin"></span><h2>Enter PIN</h2></div>
+      <div class="pin-id" id="pinEmpId"></div>
       <div class="display" id="displayPin"></div>
       <div class="keypad" id="keypadPin"></div>
       <div class="msg" id="msgPin"></div>
@@ -408,6 +413,7 @@
         <div class="icon" id="resultIcon"></div>
         <div id="resultState" class="confirmation-state hidden"></div><div class="title" id="resultTitle"></div>
         <div class="name" id="resultName"></div>
+        <div class="lock-box hidden" id="resultLock"><div class="lock-label" id="resultLockLabel"></div><div class="lock-time" id="resultLockTime"></div></div>
         <div class="detail" id="resultDetail"></div>
         <button class="btn-ghost hidden" id="resultBtn" onclick="resetKiosk()">OK</button>
       </div>
@@ -1046,15 +1052,24 @@ function startEntry(m) {
   warmServer(); // V74: wake Apps Script while the employee types ID + PIN (measured: first request after idle 3.1 s -> ~2.1 s)
   pillFor('pillEmpId'); renderEmpId(); $('msgEmpId').textContent = '';
   buildKeypad('keypadEmpId',
-    function (d) { if (employeeId.length < 4) { employeeId += d; renderEmpId(); if (employeeId.length === 4) submitEmpId(); } },
+    function (d) {
+      if (employeeId.length >= 4) return;
+      employeeId += d; renderEmpId();
+      if (employeeId.length === 4) { // V97: the 4th digit is painted before the PIN screen (it was switched away in the same instant)
+        const flow = KIOSK_FLOW;
+        setTimeout(function () { if (flow === KIOSK_FLOW && employeeId.length === 4 && !$('screenEmpId').classList.contains('hidden')) submitEmpId(); }, ID_SHOW_MS);
+      }
+    },
     function () { employeeId = ''; renderEmpId(); }, submitEmpId);
   showScreen('screenEmpId'); resetIdleTimer();
 }
+const ID_SHOW_MS = 400; // V97: how long the full 4-digit Employee ID stays visible before the PIN screen
 function renderEmpId() { $('displayEmpId').innerHTML = employeeId ? employeeId.split('').join(' ') : '<span class="placeholder">4-digit ID</span>'; }
 function submitEmpId() {
   if (employeeId.length !== 4) { $('msgEmpId').textContent = 'Employee ID must be 4 digits.'; return; }
   // The ID is not checked separately — that would reveal which IDs exist.
   pin = ''; pillFor('pillPin'); renderPin(); setPinMsg('', '');
+  $('pinEmpId').textContent = 'Employee ID ' + employeeId; // V97: the ID being sent, so the employee can check it (Cancel to fix)
   buildPinPad(); showScreen('screenPin');
 }
 function buildPinPad() {
@@ -1129,7 +1144,8 @@ function retryPinEntry(code) {
 function handleError(err) {
   const code = err && err.code, msg = (err && err.message) || 'Please try again.';
   speak(code === 'DUPLICATE' ? SAY_OK : SAY_ERR);
-  if (code === 'INVALID_LOGIN' || code === 'PIN_LOCKED') { retryPinEntry(code); return; }
+  if (code === 'PIN_LOCKED') { showLockout(err); return; }
+  if (code === 'INVALID_LOGIN') { retryPinEntry(code); return; }
   const titles = { ALREADY_IN: 'Already clocked IN', NOT_IN: 'Not clocked IN', DUPLICATE: 'Already recorded', PIN_LOCKED: 'Temporarily locked',
     INACTIVE: 'Account inactive', TERMINAL_INVALID: 'Kiosk not authorized', ON_BREAK: 'You are on break', BREAK_AUTO: 'Break is automatic',
     BREAK_NONE: 'No break to record', NOT_ON_BREAK: 'Not on break', ALREADY_ON_BREAK: 'Already on break' };
@@ -1331,8 +1347,18 @@ function staffText(t) {
     .replace(/Your manager will/g, 'Your GGM/AGGM will');
 }
 // V61SAFE STAFFTEXT END
+// V97: lockout message with the automatic unlock time from the server's answer (Saipan time) — no timer, no extra request.
+function showLockout(err) {
+  const at = err.unlockAt ? fmtTime(err.unlockAt) : '';
+  showResult('error', err.first ? '🔒' : '⏳', err.first ? 'PIN Temporarily Locked' : 'PIN Still Locked',
+    err.first ? 'Too many incorrect PIN attempts.' : 'Your PIN is still temporarily locked.',
+    err.first ? 'Please try again after the unlock time or contact your GGM/AGGM for assistance.'
+      : 'Please wait until the unlock time. Repeated attempts will not unlock your PIN earlier. For help, contact your GGM/AGGM.', true);
+  if (at) { $('resultLockLabel').textContent = err.first ? 'Automatic unlock time' : 'You can try again at'; $('resultLockTime').textContent = at; $('resultLock').classList.remove('hidden'); }
+}
 function showResult(cls, icon, title, name, detail, needsTap) {
   clearTimeout(resultTimer);
+  $('resultLock').classList.add('hidden');
   if ($('resultState')) { $('resultState').classList.add('hidden'); $('resultBox').removeAttribute('data-confirmation'); $('resultBtn').textContent = 'OK'; }
   $('resultBox').className = 'result ' + cls;
   $('resultIcon').textContent = icon; $('resultTitle').textContent = title;
