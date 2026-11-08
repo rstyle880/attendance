@@ -1217,7 +1217,7 @@
 </div>
 
 <!-- ================= TIME CARD EDIT (TCEDIT) ================= -->
-<div class="dlg-overlay" id="tcEditDlg" role="dialog" aria-modal="true" aria-labelledby="tcEditTitle">
+<div class="dlg-overlay" id="tcEditDlg" role="dialog" aria-modal="true" aria-labelledby="tcEditTitle" oninput="teSaveLabel_()" onchange="teSaveLabel_()">
   <div class="dlg" style="max-width:900px">
     <h2 id="tcEditTitle">Edit time</h2>
     <p class="sub" id="tcEditSub"></p>
@@ -1234,7 +1234,7 @@
     <div class="grid" style="margin-top:10px"><div class="full"><label for="teReason">Reason (optional for edits/additions; required for removals)</label><input id="teReason" maxlength="200" placeholder="e.g. Employee forgot to clock out — confirmed by supervisor"></div></div>
     <div id="teMsg" class="msg" style="white-space:pre-line"></div>
     <div class="actions">
-      <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save All Corrections</button>
+      <button class="btn btn-primary" id="teSave" onclick="run(this, saveTcEdit)">Save Correction</button>
       <button class="btn btn-secondary" id="teCancel" onclick="tcEditClose()">Cancel</button>
     </div>
   </div>
@@ -1492,7 +1492,8 @@ function alertSpeech(list) {
   }
   const t = list[0].type, k = list.length;
   const say = { EMP_REPORT: ['Employee reported a problem.', 'employee reports.'], MISSING_IN: ['Missed clock in.', 'missed clock ins.'], LONG_BREAK: ['Break not ended.', 'breaks not ended.'],
-    OVERDUE_OUT: ['Possible missed clock out.', 'possible missed clock outs.'], PIN_LOCKED: ['Employee locked out.', 'employees locked out.'] }[t]
+    OVERDUE_OUT: ['Possible missed clock out.', 'possible missed clock outs.'], PIN_LOCKED: ['Employee locked out.', 'employees locked out.'],
+    CORRECTION_INCOMPLETE: ['A time card correction was not finished.', 'time card corrections not finished.'] }[t]
     || ['Missed clock out.', 'missed clock outs.'];
   return 'Attention. ' + (k > 1 ? k + ' ' + say[1] : say[0]);
 }
@@ -1601,6 +1602,8 @@ const SHAPES = {
   addMissedPunch: has('rawId'), addMissedPunchBatch: has('rawIds', 'count'), voidTransaction: has('rawId', 'voidFlag'), editPunch: has('rawId', 'oldRawId'), setBreakWaiver: has('inRawId', 'waived'), setDoubleShiftBreak: has('inRawId', 'approved', 'adjustmentId'),
   addPaidHoursBatch: has('batchId', 'paidIds'), voidPaidHours: has('paidId'), voidPaidBatch: has('batchId', 'voided'), resolveEmployeeReport: has('resolved'),
   completePinLockReview: has('employeeId', 'incidentId', 'reviewed'), unlockPinLockIncident: has('employeeId', 'incidentId', 'reviewed'), // V96
+  saveTimeCardCorrections: has('employeeId', 'count'), // V99
+  getTimeCardCorrectionState: has('batchId', 'state'), finishTimeCardCorrections: has('batchId', 'state'), // V99c
   openArchivedCorrection: has('employeeId', 'periodStart'), finalizeArchivedCorrection: has('version'), cancelArchivedCorrection: has('closed'),
   setupDeptPosMasters: has('departments', 'positions'), addDepartment: has('departments', 'positions'), addPosition: has('departments', 'positions'),
   updateDepartment: has('departments', 'positions'), updatePosition: has('departments', 'positions'), setDepartmentStatus: has('departments', 'positions'),
@@ -1623,7 +1626,7 @@ const READ_ACTIONS = /^(list|get|adminBootstrap|adminPing|timecardReport)/;
 // the save at most once and answers a repeat with the original answer. Saves are retried only
 // when the server has said it understands request IDs (adminBootstrap → idempotency: true).
 let IDEMP_OK = false;
-const SAVE_ACTIONS = /^(unlockPinLockIncident|completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|addMissedPunchBatch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
+const SAVE_ACTIONS = /^(unlockPinLockIncident|saveTimeCardCorrections|finishTimeCardCorrections|completePinLockReview|createEmployee|updateEmployee|archiveEmployee|unarchiveEmployee|unlockEmployeePin|createVenue|registerTerminal|setTerminalButtonSound|setTerminalCamera|removeTerminal|addMissedPunch|addMissedPunchBatch|voidTransaction|editPunch|setBreakWaiver|setDoubleShiftBreak|addPaidHoursBatch|voidPaidHours|voidPaidBatch|resolveEmployeeReport|openArchivedCorrection|finalizeArchivedCorrection|cancelArchivedCorrection|setupDeptPosMasters|addDepartment|addPosition|updateDepartment|updatePosition|setDepartmentStatus|setPositionStatus|deptPosDataCheck|setupComputationRules|saveComputationRuleVersion|cancelComputationRuleVersion|applyDeptDefaultBreaks|saveKioskContent|removeKioskContent|updateMyAccount|saveHoliday|cancelHoliday|setEmployeePartTime|processHoliday|reverseHolidayBatch|reconcileHolidayBatch)$/;
 const SAVE_RETRY = { NETWORK: 1, BAD_RESPONSE: 1, BAD_SHAPE: 1, TIMEOUT: 1, IN_PROGRESS: 1, BUSY: 1 };
 function newRequestId() {
   const day = new Date(Date.now() + 10 * 3600000).toISOString().slice(0, 10).replace(/-/g, ''); // Saipan date
@@ -2544,6 +2547,7 @@ function describeAlert(a) {
     return 'Locked out after too many wrong PINs at ' + where + ' on ' + saipanDateTime(a.time) + '. ' +
       (a.stillLocked ? 'Locked until ' + saipanTimeOnly(a.lockedUntil) + '.' : 'The lock has run out, but check that they can clock in (they may have forgotten their PIN).');
   }
+  if (a.type === 'CORRECTION_INCOMPLETE') return 'A time card correction started on ' + saipanDateTime(a.time) + ' stopped part-way. Press Review to see what was saved.'; // V99c
   if (a.type === 'LONG_BREAK') return 'Started a break on ' + saipanDateTime(a.time) + ', ' + a.minutesOnBreak + ' minutes ago — break not ended yet.';
   if (a.type === 'MISSING_IN') return 'Clocked OUT on ' + saipanDateTime(a.time) + ' with no clock-in. Add the real start time with "Add missed punch".';
   if (a.type === 'OVERDUE_OUT') {
@@ -2564,7 +2568,7 @@ function setAlertTable(result) {
     addRow(tbody, [
       el('div', null, [el('b', { text: a.name }), el('div', { className: 'sub', style: 'margin:0', text: 'ID ' + a.employeeId + (a.department ? ', ' + a.department : '') })]),
       a.type === 'EMP_REPORT' ? 'Employee report' : a.type === 'MISSING_IN' ? 'No clock-in' : a.type === 'LONG_BREAK' ? 'Break not ended' : a.type === 'OVERDUE_OUT' ? 'Still clocked in (overdue)'
-        : a.type === 'PIN_LOCKED' ? (a.stillLocked ? 'PIN locked' : 'PIN lock (expired)') : 'No clock-out',
+        : a.type === 'PIN_LOCKED' ? (a.stillLocked ? 'PIN locked' : 'PIN lock (expired)') : a.type === 'CORRECTION_INCOMPLETE' ? 'Correction not finished' : 'No clock-out',
       saipanDateTime(a.time), String(a.hoursAgo), venueName(a.venueId),
       alertActions(a, true)
     ]);
@@ -2578,7 +2582,7 @@ function showAlertPopup(list) {
   const ids = list.map(alertKey).join(','); // ALERTPOP: type + id, as in the once-per-session record
   document.getElementById('alertTitle').textContent = list.length === 1
     ? (list[0].type === 'EMP_REPORT' ? 'Employee reported a problem' : list[0].type === 'LONG_BREAK' ? 'Break not ended' : list[0].type === 'OVERDUE_OUT' ? 'Possible missed clock-out'
-      : list[0].type === 'PIN_LOCKED' ? 'Employee locked out'
+      : list[0].type === 'PIN_LOCKED' ? 'Employee locked out' : list[0].type === 'CORRECTION_INCOMPLETE' ? 'Correction not finished'
       : 'Missed ' + (list[0].type === 'MISSING_IN' ? 'clock-in' : 'clock-out'))
     : list.length + ' attendance alerts';
   document.getElementById('alertLead').textContent = 'Please check with the employee and fix the record.';
@@ -2619,6 +2623,10 @@ function alertActions(a, small) {
   if (a.type === 'EMP_REPORT') { // MYREC: open the time card to fix, then mark resolved
     wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: 'Open time card', onclick: function () { openReportCard(a); } }));
     wrap.appendChild(el('button', { className: 'btn btn-secondary' + sz, text: 'Mark resolved', onclick: function () { resolveReport(this, a); } }));
+    return wrap;
+  }
+  if (a.type === 'CORRECTION_INCOMPLETE') { // V99c
+    wrap.appendChild(el('button', { className: 'btn btn-primary' + sz, text: 'Review', onclick: function () { closeAlertPopup(); run(this, function () { return reviewCorrection_(a.rawId); }); } }));
     return wrap;
   }
   if (a.type !== 'PIN_LOCKED') {
@@ -5188,6 +5196,7 @@ function openTcEdit(c, startDate, endDate, saved) {
   TE.items = items;
   document.getElementById('teAddRows').innerHTML = ''; teAddRow_();
   document.getElementById('teReason').value = ''; clearMsg('teMsg');
+  teSaveLabel_();
   openDlg('tcEditDlg');
 }
 // V79: Edit Time stays open after Save. Saved corrections are shown from the reloaded time card; only FAILED ones are put
@@ -5220,6 +5229,12 @@ function tcEditDirty_(rows, adds) {
   if (!Array.isArray(adds)) adds = [{ dir: adds || '' }]; // V89: list of added punches (older callers: the type)
   return adds.some(function (a) { return !!(a.dir || a.time); }) || rows.some(function (r) { return r.rm || r.d !== r.od || r.t !== r.ot || r.ty !== r.oty; });
 }
+// V99: how many corrections are waiting, and the Save button's words
+function tcEditCount_(rows, adds) {
+  return adds.filter(function (a) { return !!(a.dir || a.time); }).length + rows.filter(function (r) { return r.rm || r.d !== r.od || r.t !== r.ot || r.ty !== r.oty; }).length;
+}
+function tcEditSaveLabel_(n) { return n > 1 ? 'Save All Corrections (' + n + ')' : 'Save Correction'; }
+function teSaveLabel_() { document.getElementById('teSave').textContent = tcEditSaveLabel_(tcEditCount_(teEditRows_(), teAddValues_())); }
 function teEditRows_() {
   return (TE && TE.items || []).map(function (it) { const f = it.inputs;
     return { d: f.d.value, t: f.t.value, ty: f.ty.value, rm: f.rm.checked, od: it.orig.date, ot: it.orig.time, oty: it.dir }; });
@@ -5253,6 +5268,7 @@ function teAddRemove_(row) {
   row.remove();
   if (!box.children.length) teAddRow_(); // keep one empty row
   teAddNumber_();
+  teSaveLabel_();
 }
 function teAddNumber_() {
   Array.prototype.forEach.call(document.getElementById('teAddRows').children, function (r, i) { r.f && (r.querySelector('b').textContent = (i + 1) + '.'); });
@@ -5299,21 +5315,46 @@ function tcEditRestore_(r) {
     it.mark();
   });
   if (r.adds && r.adds.length) { document.getElementById('teAddRows').innerHTML = ''; r.adds.forEach(function (a) { teAddRow_(a); }); }
+  teSaveLabel_();
   return lost;
+}
+// V99c: a correction that stopped part-way. Shows what was saved; only the Admin's answer writes anything. True = now complete.
+async function resolveCorrection_(s) {
+  const list = s.items.map(function (i) { return (i.done ? '✓ ' : '• ') + i.text; }).join('\n');
+  if (await askConfirm('A time card correction for ' + (s.name || s.employeeId) + ' stopped part-way.\n\n✓ = saved, • = not saved yet\n' + list + '\n\nFinish saving it?', 'Finish saving', 'Not now')) {
+    const r = await call('finishTimeCardCorrections', { batchId: s.batchId, mode: 'finish' });
+    if (!r.ok) { toast(r.error.message); return false; }
+    toast('Correction finished.');
+    return true;
+  }
+  if (await askConfirm('Was this already fixed by hand? Close it without changing any punch?\n\nChoose "Keep in Alerts" to decide later.', 'Close, already fixed', 'Keep in Alerts')) {
+    const r = await call('finishTimeCardCorrections', { batchId: s.batchId, mode: 'close' });
+    toast(r.ok ? 'Closed. No punch was changed.' : r.error.message);
+  }
+  return false;
+}
+async function reviewCorrection_(batchId) {
+  const s = await call('getTimeCardCorrectionState', { batchId: batchId });
+  if (!s.ok) { toast(s.error.message); return; }
+  if (s.data.state === 'INCOMPLETE') await resolveCorrection_(s.data); else toast('This correction is already complete.');
+  await checkAlerts(true);
+  await loadReport();
 }
 async function saveTcEdit() {
   const reason = teReason.value.trim();
   const changes = [];
+  let incomplete = false;
   TE.items.forEach(function (it) {
     const f = it.inputs;
     if (f.rm.checked) changes.push({ kind: 'remove', it: it, text: 'Remove ' + dirLabel(it.dir) + ' ' + saipanTimeOnly(it.iso) + ' (' + shortDate(it.orig.date) + ')' });
     else if (f.d.value !== it.orig.date || f.t.value !== it.orig.time || f.ty.value !== it.dir) {
-      if (!f.d.value || !f.t.value) return;
+      if (!f.d.value || !f.t.value) { incomplete = true; return; }
       const dir = f.ty.value !== it.dir ? f.ty.value : ''; // V76: sent only when the type was changed
       changes.push({ kind: 'edit', it: it, date: f.d.value, time: f.t.value, dir: dir,
         text: dirLabel(it.dir) + (dir ? ' → ' + dirLabel(dir) : '') + ' ' + it.orig.time + ' (' + shortDate(it.orig.date) + ') → ' + f.t.value + ' (' + shortDate(f.d.value) + ')' });
     }
   });
+  if (incomplete) { setMsg('teMsg', false, 'Please enter both the date and the time for each changed punch.'); return; } // V99: there is no second dialog to show it was left out
   const adds = teAddCheck_(teAddValues_()); // V89
   teAddMark_(adds.errors);
   if (adds.errors.length) { setMsg('teMsg', false, 'Please fix the added punch rows marked in red.'); return; }
@@ -5326,7 +5367,9 @@ async function saveTcEdit() {
   });
   if (!changes.length) { setMsg('teMsg', false, 'Nothing changed.'); return; }
   if (changes.some(function (x) { return x.kind === 'remove'; }) && reason.length < 3) { setMsg('teMsg', false, 'Please enter the reason for removing a punch.'); teReason.focus(); return; }
-  if (!await askConfirm('Save these corrections for ' + TE.c.name + '?\n\n' + changes.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason, 'Save corrections', 'Cancel')) return;
+  const removing = changes.filter(function (x) { return x.kind === 'remove'; }); // V99c: only a removal asks first; time edits save in one click
+  if (removing.length && !await askConfirm('Remove ' + (removing.length === 1 ? 'this punch' : 'these ' + removing.length + ' punches') + ' for ' + TE.c.name + '?\n\n' + removing.map(function (x) { return '• ' + x.text; }).join('\n') + '\n\nReason: ' + reason, removing.length === 1 ? 'Remove punch' : 'Remove punches', 'Keep')) return;
+  clearMsg('teMsg'); // V99: one click saves; an earlier saved message must not show during this save
   const pinFix = pinFixForEmployee_(TE.c.employeeId);
   if (!verifyPinFix_(pinFix)) return;
   if (pinFix) { pinFix.corrected = false; pinFix.refreshed = false; }
@@ -5348,22 +5391,31 @@ async function saveTcEdit() {
     });
     if (r.ok) rememberPinFixDates_(pinFix, savedDates);
   }
-  for (const x of changes) {
-    if (x.kind === 'add') continue;
-    let r;
-    if (x.kind === 'edit') r = await call('editPunch', { rawId: x.it.rawId, date: x.date, time: x.time, reason: reason, ...(x.dir ? { direction: x.dir } : {}) });
-    else r = await call('voidTransaction', { rawId: x.it.rawId, reason: reason });
-    results.push({ kind: x.kind, ok: !!r.ok, text: x.text, msg: r.ok ? '' : r.error.message, rawId: x.it ? x.it.rawId : '',
-      date: x.date || '', time: x.time || '', dir: x.dir || '', venueId: x.venueId || '' });
-    if (!r.ok) errs.push(x.text + ': ' + r.error.message);
-    else {
-      if (x.it) savedDates.push(x.it.orig.date);
-      if (x.date) savedDates.push(x.date);
-      rememberPinFixDates_(pinFix, savedDates);
+  const existing = changes.filter(function (x) { return x.kind !== 'add'; });
+  if (existing.length) { // V99: ONE request — the server saves all of these corrections or none
+    const batchId = newRequestId().replace('REQ-', 'TCB-');
+    const r = await call('saveTimeCardCorrections', { batchId: batchId, employeeId: TE.c.employeeId, reason: reason, changes: existing.map(function (x) {
+      return x.kind === 'remove' ? { rawId: x.it.rawId, remove: true } : { rawId: x.it.rawId, date: x.date, time: x.time, ...(x.dir ? { direction: x.dir } : {}) }; }) });
+    if (!r.ok && /^(BATCH_INVALID|BUSY|VALIDATION_ERROR|FORBIDDEN)$/.test(r.error.code)) { // certainly nothing saved: keep the entries as typed
+      setMsg('teMsg', false, r.error.rows ? 'Nothing was saved. Please fix:\n' + r.error.rows.map(function (p) { return existing[p.row - 1].text + ': ' + p.message; }).join('\n') : r.error.message); return;
     }
+    if (!r.ok) { // V99c: the answer is unclear. Read what is really saved; this save is never sent again.
+      const s = await call('getTimeCardCorrectionState', { batchId: batchId });
+      const state = s.ok ? s.data.state : '';
+      if (state === 'NOT_STARTED') { setMsg('teMsg', false, 'Checked with the server: nothing was saved (' + r.error.message + ').\nYour entries are still below. Press Save again when ready.'); return; }
+      if (!state) { setMsg('teMsg', false, 'Could not confirm whether this was saved (' + r.error.message + ').\nYour entries are still below. Saving again is safe: the server refuses any punch that was already corrected.'); return; }
+      if (state === 'INCOMPLETE' && !await resolveCorrection_(s.data)) { // stays in Alerts; the card shows what is really there
+        closeDlg('tcEditDlg'); await checkAlerts(true); await loadReport(); return;
+      }
+    }
+    existing.forEach(function (x) { // saved: by the answer, or checked with the server after an unclear one
+      results.push({ kind: x.kind, ok: true, text: x.text, msg: '', rawId: x.it.rawId, date: x.date || '', time: x.time || '', dir: x.dir || '', venueId: '' });
+      savedDates.push(x.it.orig.date); if (x.date) savedDates.push(x.date);
+    });
+    rememberPinFixDates_(pinFix, savedDates);
   }
   const sum = tcEditResults_(results);
-  toast(errs.length ? (changes.length - errs.length) + ' of ' + changes.length + ' saved.' : 'Corrections saved.');
+  toast(errs.length ? (changes.length - errs.length) + ' of ' + changes.length + ' saved.' : changes.length === 1 ? 'Correction saved.' : 'Corrections saved.');
   if (tcMode === 'arch' && ARCH.previewing) { // archived cards: unchanged behaviour (closes after a clean save)
     if (errs.length) setMsg('teMsg', false, 'Some changes were not saved:\n' + errs.join('\n')); else closeDlg('tcEditDlg');
     await previewCorrection();
