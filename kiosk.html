@@ -630,6 +630,21 @@ const ANSWER_OK = { clockIn: function (d) { return !!d.rawId || (d.intentVersion
   kioskBreakStatus: function (d) { return Array.isArray(d.options); }, kioskMyRecords: function (d) { return Array.isArray(d.rows); },
   kioskHome: function (d) { return !!d.terminalId; }, kioskPing: function (d) { return !!d.terminalId; },
   kioskOnBreak: function (d) { return Array.isArray(d.items); }, kioskContent: function (d) { return Array.isArray(d); } };
+// M4 4E pilot: after Apps Script CONFIRMED a punch, send the same request to Firebase as a copy.
+// Fire-and-forget: never awaited, 8 s limit, no retry, errors ignored — the employee's screen and queue are unchanged.
+// The copy carries NO PIN and NO kiosk secret (Apps Script already checked them).
+const SHADOW_URL = 'https://asia-northeast1-ta-firebase-test-749cc.cloudfunctions.net/pilotlive'; // '' = off
+const SHADOW_ACTIONS = { clockIn: 1, clockOut: 1, kioskBreakAction: 1, syncOfflinePunch: 1 };
+function shadowCopy(action, payload) {
+  if (!SHADOW_URL || !SHADOW_ACTIONS[action]) return;
+  try {
+    payload = Object.assign({}, payload); delete payload.pin; delete payload.terminalSecret;
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (ctl) setTimeout(function () { ctl.abort(); }, 8000);
+    fetch(SHADOW_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, keepalive: true,
+      body: JSON.stringify({ action: action, payload: payload }), signal: ctl ? ctl.signal : undefined }).catch(function () {});
+  } catch (e) {}
+}
 async function api(action, payload, timeoutMs, fixedUrl) {
   const c = getConfig();
   // Bound fetch AND body parsing, including clients where abort is unavailable or ignored.
@@ -653,6 +668,7 @@ async function api(action, payload, timeoutMs, fixedUrl) {
       let out;
       try { out = await res.json(); } catch (e) { throw new NetworkError('Bad response'); }
       if (out && out.ok && ANSWER_OK[action] && !(out.data && ANSWER_OK[action](out.data))) throw new NetworkError('Bad response');
+      if (out && out.ok) shadowCopy(action, payload);
       return out;
     })(), deadline]);
   } finally { clearTimeout(timer); }
