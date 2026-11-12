@@ -746,7 +746,10 @@ const KioskIntentStore=(function(){
     // Execute the synchronous mutation inside the serial IDB lease transaction.
     return transaction(['leases'],'readwrite',(t,set,fail)=>{const s=t.objectStore('leases'),q=s.get('data');q.onsuccess=()=>{if(q.result&&q.result.expires>Date.now()){fail(new Error('Intent data coordinator busy'));return;}try{s.put({key:'data',token:makeId(),expires:Date.now()+TTL});const value=sync(callback);s.delete('data');set(value);}catch(e){fail(e);}};});
   }
-  return Object.freeze({ready:()=>ready().then(()=>undefined),reserve,importQueued,update,get,head,list,withLease,withData});
+  // M5: the Web App URL changed (cutover / rollback). Forget each employee's last finished tap for this terminal so the first
+  // tap on the new URL carries no anchor from the old one (the server's state rules still apply). Pending heads and all events stay.
+  function resetHeads(terminalId){return transaction(['scopes','events'],'readwrite',(t,set)=>{const s=t.objectStore('scopes'),e=t.objectStore('events'),q=s.getAll();let n=0;q.onsuccess=()=>{for(const h of q.result){let k;try{k=JSON.parse(h.key);}catch(_){continue;}if(k[1]!==terminalId)continue;const r=e.get(h.id);r.onsuccess=()=>{if(!r.result||['SERVER_CONFIRMED','REFUSED','CHOICE','RECONCILED'].includes(r.result.status)){s.delete(h.key);n++;set(n);}};}set(n);};});}
+  return Object.freeze({ready:()=>ready().then(()=>undefined),reserve,importQueued,update,get,head,list,withLease,withData,resetHeads});
 })();
 
 
@@ -2302,6 +2305,9 @@ async function testAndSaveSetup() {
     if (!result.ok) { out.className = 'result-line err'; out.textContent = result.error.message; return; }
     const old = getConfig(), pending = loadList(LS.queue);
     if (!pending.ok || ((url !== old.url || termId !== old.terminalId) && pending.list.length)) { out.className = 'result-line err'; out.textContent = 'Pending or unreadable punch evidence must be recovered before changing this kiosk setup.'; return; }
+    if (old.url && url !== old.url) { // M5: no anchor from the old Web App URL is sent to the new one
+      try { await KioskIntentStore.resetHeads(termId); } catch (e) { out.className = 'result-line err'; out.textContent = 'This kiosk could not prepare the new Web App URL — try again.'; return; }
+    }
     lsSet(LS.url, url); lsSet(LS.termId, termId); lsSet(LS.secret, secret);
     lsSet(LS.venueName, result.data.venueName || result.data.venueId);
     lsSet(LS.venueId, result.data.venueId || '');
