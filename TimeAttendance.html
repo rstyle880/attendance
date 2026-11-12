@@ -1545,7 +1545,7 @@ async function postApi(url, action, payload, beforeSend) {
   } finally { releaseSlot(); }
 }
 async function postApiNow(url, action, payload) {
-  if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[^/]+\/exec$/.test(url)) {
+  if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[^/]+\/exec$/.test(url) && url !== 'https://asia-northeast1-ta-firebase-test-749cc.cloudfunctions.net/prod') { // M5: the Firebase production API (exact URL only)
     return { ok: false, error: { code: 'BAD_URL',
       message: 'The Web App URL must look like https://script.google.com/macros/s/.../exec (ending in /exec, not /dev, no spaces).' } };
   }
