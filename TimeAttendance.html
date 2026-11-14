@@ -510,8 +510,6 @@
 <!-- ================= LOGIN ================= -->
 <div id="loginScreen">
   <h2>Admin Login</h2>
-  <div class="field"><label for="apiUrl">Web App URL</label>
-    <input id="apiUrl" placeholder="https://script.google.com/macros/s/XXXX/exec"></div>
   <div class="field"><label for="loginUser">Username</label><input id="loginUser" autocomplete="username"></div>
   <div class="field"><label for="loginPass">Password</label><input id="loginPass" type="password" autocomplete="current-password"></div>
   <button class="btn btn-primary" id="loginBtn" onclick="run(this, doLogin)">Log in</button>
@@ -1452,8 +1450,11 @@ let reportEmp = null;    // selected employee on the Time Cards tab (null = all)
 let alertTimer = null;
 let lastAlerts = [];
 
-try { document.getElementById('apiUrl').value = localStorage.getItem('admin_apiUrl') || ''; } catch (e) {}
-function apiUrl() { return document.getElementById('apiUrl').value.replace(/\s+/g, ''); }
+// ADMIN URL: the only server this page talks to. Changing it = a reviewed update of this page on GitHub (owner approval);
+// there is no URL box. A rollback to Apps Script restores the previous admin page (RUNBOOK).
+const DEFAULT_API_URL = 'https://asia-northeast1-ta-firebase-test-749cc.cloudfunctions.net/prod';
+function apiUrl() { return DEFAULT_API_URL; }
+try { localStorage.removeItem('admin_apiUrl'); } catch (e) {} // the old typed URL is no longer used
 
 // ============================================================================
 // Buttons: loading spinner + no double clicks
@@ -1545,9 +1546,8 @@ async function postApi(url, action, payload, beforeSend) {
   } finally { releaseSlot(); }
 }
 async function postApiNow(url, action, payload) {
-  if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[^/]+\/exec$/.test(url) && url !== 'https://asia-northeast1-ta-firebase-test-749cc.cloudfunctions.net/prod') { // M5: the Firebase production API (exact URL only)
-    return { ok: false, error: { code: 'BAD_URL',
-      message: 'The Web App URL must look like https://script.google.com/macros/s/.../exec (ending in /exec, not /dev, no spaces).' } };
+  if (url !== DEFAULT_API_URL) { // ADMIN URL: exactly one server
+    return { ok: false, error: { code: 'BAD_URL', message: 'This server address is not allowed.' } };
   }
   let res, text;
   // FIX14 #1: never wait forever — a stuck server run (seen in Executions as
@@ -1743,8 +1743,6 @@ function methodLabel(m) {
 // ============================================================================
 async function doLogin() {
   const url = apiUrl();
-  if (!url) { setMsg('loginMsg', false, 'Enter the Web App URL first.'); return; }
-  document.getElementById('apiUrl').value = url;
   setMsg('loginMsg', true, 'Checking your login…');
   // LOGIN FIX: Google sometimes answers with a 404 page instead of our answer.
   // A login is safe to repeat, so try up to 3 times before showing an error.
@@ -1763,7 +1761,6 @@ async function doLogin() {
       : result.error.message);
     return;
   }
-  try { localStorage.setItem('admin_apiUrl', url); } catch (e) {}
   sessionToken = result.data.token; SESSION_GEN++; // SESSION GUARD: a new session
   lastActivity = Date.now(); lastServerTouch = Date.now();
   try { sessionStorage.setItem('admin_last_activity', String(lastActivity)); } catch (e) {}
