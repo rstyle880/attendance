@@ -122,6 +122,8 @@
   .ot-form td.ot-val { font-weight: 700; background: #fef3c7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .ot-form .ot-sign { display: flex; gap: 40px; margin-top: 34px; } .ot-form .ot-sign div { flex: 1; border-top: 1px solid #111; padding-top: 4px; }
   .ot-form .ot-note { font-size: 11px; color: #64748b; margin-top: 8px; }
+  .ot-form .ot-reason { font-size: 12px; color: #0f172a; white-space: normal; }
+  .ot-form .ot-rbtn { margin-top: 2px; padding: 1px 8px; font-size: 11px; }
   @media print { .ot-form { border: none; margin: 0; padding: 0; page-break-after: always; break-after: page; } .ot-form:last-child { page-break-after: auto; break-after: auto; } }
   .tc-cobox { margin: 6px 0 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #f8fafc; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .msg:empty { display: none; }
@@ -4673,6 +4675,9 @@ async function showOtForms_() {
   const isAgency = function (c) { return psIsSplit_(c, EMPLOYEES.find(function (e) { return e.employeeId === String(c.employeeId); }), REPORT_SETTINGS); };
   const agency = cards.filter(isAgency).length;
   const forms = otFormsFor_(cards, isAgency, period, OT_MODE);
+  const nr = await call('listOvertimeNotes', { startDate: period.start, endDate: period.end }); // OTNOTE (Phase 4)
+  OT_NOTES = {}; if (nr.ok) nr.data.forEach(function (n) { OT_NOTES[n.employeeId + '|' + n.date] = n; });
+  OT_NOTES_OK = !!nr.ok;
   const out = document.getElementById('otOut'); out.innerHTML = '';
   const sel = el('select', { id: 'otMode' }, [el('option', { value: 'ot', text: 'Employees with overtime' }), el('option', { value: 'all', text: 'All employees shown' })]);
   sel.value = OT_MODE; sel.onchange = function () { OT_MODE = sel.value; showOtForms_(); };
@@ -4688,6 +4693,36 @@ async function showOtForms_() {
 function otRangeLabel_(p) { // "Nov 1 – Nov 14, 2026"
   const f = function (d, y) { return dtf_('en-US', Object.assign({ timeZone: TZ, month: 'short', day: 'numeric' }, y ? { year: 'numeric' } : {})).format(new Date(d + 'T12:00:00+10:00')); };
   return f(p.start, false) + ' – ' + f(p.end, true);
+}
+// OTNOTE (Phase 4): typed Reason for OT / Remarks — text only, audited on the server; blank = handwritten as before.
+let OT_NOTES = {}, OT_NOTES_OK = false;
+function otReasonCell_(f, d, first, hasShift) {
+  const td = el('td', { className: 'reason' });
+  if (!first) return td; // one reason per employee per day (shown on the first line of the day)
+  const n = OT_NOTES[f.employeeId + '|' + d.date];
+  if (n) td.appendChild(el('div', { className: 'ot-reason', text: n.reason }));
+  if (n && !d.lines.length) td.appendChild(el('div', { className: 'ot-small no-print', text: '(no shift now)' }));
+  if (OT_NOTES_OK && (hasShift || n)) td.appendChild(el('button', { className: 'btn btn-secondary btn-sm no-print ot-rbtn', text: n ? '✎ Edit' : '✎ Reason',
+    title: 'Type the reason for OT / remarks for this day (saved with an audit log; hours are not changed)', onclick: function () { otReasonEdit_(td, f, d, n); } }));
+  return td;
+}
+function otReasonEdit_(td, f, d, n) {
+  td.innerHTML = '';
+  const inp = el('input', { type: 'text', maxlength: '200', placeholder: 'e.g. Short staff / Event / Additional duty (day off)', style: 'width:100%' });
+  inp.value = n ? n.reason : '';
+  const msg = el('div', { className: 'ot-small' });
+  const save = async function (text) {
+    msg.textContent = 'Saving…';
+    const r = await call('saveOvertimeNote', { employeeId: f.employeeId, date: d.date, reason: text });
+    if (!r.ok) { msg.textContent = r.error.message; return; }
+    return showOtForms_();
+  };
+  const bar = el('div', { className: 'no-print', style: 'display:flex;gap:6px;margin-top:4px;flex-wrap:wrap' }, [
+    el('button', { className: 'btn btn-primary btn-sm', text: 'Save', onclick: function () { run(this, function () { return save(inp.value); }); } }),
+    n ? el('button', { className: 'btn btn-secondary btn-sm', text: 'Remove', onclick: function () { run(this, function () { return save(''); }); } }) : null,
+    el('button', { className: 'btn btn-secondary btn-sm', text: 'Cancel', onclick: function () { showOtForms_(); } })]);
+  td.appendChild(el('div', { className: 'no-print' }, [inp, bar, msg]));
+  inp.focus();
 }
 function renderOtForm_(f, period) {
   const sg = ((REPORT_SETTINGS || {}).signers || {})[f.co] || {};
@@ -4718,7 +4753,7 @@ function renderOtForm_(f, period) {
         if (first && paid) dayCell.appendChild(el('div', { className: 'ot-small', text: paid }));
         tb.appendChild(el('tr', { className: (l && l.ot ? 'ot-has ' : '') + (l ? '' : 'ot-none') }, [
           el('td', { text: first ? md(d.date) : '' }), dayCell, el('td', { text: l && l.flag === 'MISSING_IN' ? 'MISSING' : inC }), el('td', { text: outC }), worked,
-          el('td', { className: 'num' + (l && l.ot ? ' ot-val' : ''), text: l && l.ot ? psHM_(l.ot) : (l && !l.flag ? '0:00' : '') }), el('td', { className: 'reason', text: '' })]));
+          el('td', { className: 'num' + (l && l.ot ? ' ot-val' : ''), text: l && l.ot ? psHM_(l.ot) : (l && !l.flag ? '0:00' : '') }), otReasonCell_(f, d, first, !!l)]));
       });
     });
     tb.appendChild(el('tr', { className: 'ot-sub' }, [el('td', { colspan: '4', text: 'Week ' + (wi + 1) + ' total — Regular ' + psHM_(w.regular) }), el('td', { className: 'num', text: psHM_(w.worked) }), el('td', { className: 'num', text: psHM_(w.ot) }), el('td', { text: '' })]));
