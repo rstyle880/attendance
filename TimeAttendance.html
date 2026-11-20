@@ -78,6 +78,52 @@
   tr.voided td:last-child { text-decoration: none; }
 
   .msg { margin-top: 14px; padding: 10px 12px; border-radius: 6px; font-size: 13px; white-space: pre-wrap; }
+  /* PAYSUM (V99-REPORTS): Payroll Summary */
+  .ps-recon { margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; border: 1px solid #d1d5db; background: #f9fafb; }
+  .ps-recon.ok { border-color: #86efac; background: #f0fdf4; } .ps-recon.bad { border-color: #fca5a5; background: #fef2f2; }
+  .ps-recon table { border-collapse: collapse; margin-top: 6px; } .ps-recon td, .ps-recon th { padding: 2px 10px 2px 0; text-align: right; font-size: 12px; }
+  .ps-recon td:first-child, .ps-recon th:first-child { text-align: left; }
+  .ps-settings { margin-top: 14px; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; }
+  .ps-report { background: #fff; margin: 16px 0; padding: 18px; border: 1px solid #e5e7eb; border-radius: 8px; }
+  .ps-report h3 { margin: 0; text-align: center; font-size: 16px; letter-spacing: .3px; }
+  .ps-report .ps-period { text-align: center; font-size: 13px; margin: 4px 0 12px; }
+  .ps-report table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px; }
+  .ps-report th, .ps-report td { border: 1px solid #cbd5e1; padding: 4px 8px; text-align: right; }
+  .ps-report th:first-child, .ps-report td:first-child { text-align: left; }
+  .ps-report th { background: #e2e8f0; } .ps-report tr.ps-group td { background: #f1f5f9; font-weight: 700; text-align: left; }
+  .ps-report tr.ps-sub td { font-weight: 700; background: #f8fafc; } .ps-report tr.ps-grand td { font-weight: 700; background: #e2e8f0; }
+  .ps-report .ps-sign { display: flex; gap: 40px; margin-top: 28px; font-size: 13px; } .ps-report .ps-sign div { flex: 1; border-top: 1px solid #111; padding-top: 4px; }
+  .ps-report .ps-empty { color: #6b7280; font-size: 13px; }
+  /* HKCARD: company card note */
+  /* OTFORM: Overtime Work Authorization */
+  .ot-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+  .ot-bar .btn { white-space: nowrap; }
+  .ot-bar select { width: auto; flex: 0 1 260px; min-width: 200px; }
+  .ot-bar .ot-chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 7px 12px; border-radius: 8px; background: #e0ecff; color: #1e3a8a; font-size: 13px; font-weight: 600; }
+  .ot-bar .ot-barnote { flex-basis: 100%; font-size: 12px; color: #64748b; margin-top: -2px; }
+  @media (max-width: 640px) { .ot-bar .btn, .ot-bar select { flex: 1 1 100%; } .ot-bar .ot-chip { white-space: normal; } }
+  .ot-form { background: #fff; margin: 16px 0; padding: 18px 22px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 13px; }
+  .ot-form .ot-co { text-align: center; font-weight: 700; font-size: 15px; } .ot-form .ot-title { text-align: center; font-weight: 700; letter-spacing: .5px; margin: 4px 0 12px; }
+  .ot-form .ot-who { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+  .ot-form table { width: 100%; border-collapse: collapse; } .ot-form th, .ot-form td { border: 1px solid #cbd5e1; padding: 5px 8px; vertical-align: top; }
+  .ot-form th { background: #e2e8f0; text-align: left; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form td.num { text-align: right; white-space: nowrap; } .ot-form td.reason { width: 34%; }
+  .ot-form tr.ot-sub td { font-weight: 700; background: #f8fafc; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form tr.ot-total td { font-weight: 700; background: #e2e8f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form .ot-worked { font-size: 11px; color: #475569; margin-top: 2px; }
+  .ot-form .ot-small { font-size: 10.5px; color: #64748b; font-weight: 400; }
+  .ot-form table.ot-week td, .ot-form table.ot-week th { padding: 3px 7px; }
+  .ot-form th.num { text-align: right; }
+  .ot-form table.ot-week td:not(.reason), .ot-form table.ot-week th { white-space: nowrap; }
+  .ot-form table.ot-week td.reason { width: 30%; white-space: normal; }
+  @media (max-width: 640px) { #otOut .ot-form { overflow-x: auto; } }
+  .ot-form tr.ot-wk td { background: #1e3a8a; color: #fff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form tr.ot-none td { color: #94a3b8; }
+  .ot-form td.ot-val { font-weight: 700; background: #fef3c7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ot-form .ot-sign { display: flex; gap: 40px; margin-top: 34px; } .ot-form .ot-sign div { flex: 1; border-top: 1px solid #111; padding-top: 4px; }
+  .ot-form .ot-note { font-size: 11px; color: #64748b; margin-top: 8px; }
+  @media print { .ot-form { border: none; margin: 0; padding: 0; page-break-after: always; break-after: page; } .ot-form:last-child { page-break-after: auto; break-after: auto; } }
+  .tc-cobox { margin: 6px 0 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #f8fafc; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .msg:empty { display: none; }
   .msg.ok { background: #e6f4ea; color: #1e5e2c; }
   .msg.err { background: #fdecea; color: #8c1d18; }
@@ -342,6 +388,10 @@
     .timecard th, .tlabel, .tc-corr h4, .tc-incomplete, .tc-totals th, .tc-totals tr.pp-total td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .timecard tr.week-total td, .timecard tr.grand td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @page { size: letter portrait; margin: 12mm; }
+    .ps-report { page-break-after: always; break-after: page; } /* PAYSUM: one summary per page */
+    .ps-report:last-child { page-break-after: auto; break-after: auto; }
+    .ps-report[hidden] { display: none !important; }
+    .ps-report th, .ps-report tr.ps-sub td, .ps-report tr.ps-grand td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     /* A1 (V1): cards still being drawn are never printed (also Ctrl+P / browser menu) — only this notice */
     #reportOut.tc-drawing > * { display: none !important; }
     .timecard[hidden] { display: none !important; }
@@ -722,6 +772,42 @@
       <div class="subnav no-print" id="tcNav">
         <button class="on" data-v="live" onclick="tcView('live')">Current &amp; Previous (live)</button>
         <button data-v="arch" onclick="tcView('arch')">Archived Time Cards</button>
+        <button data-v="sum" onclick="tcView('sum')">Payroll Summary</button>
+      </div>
+      <!-- PAYSUM (V99-REPORTS): read-only Payroll Summaries built from the Time Card results (no calculation change) -->
+      <div class="block no-print" id="sumPanel" hidden>
+        <h2>Payroll Summary</h2>
+        <p class="sub">ME / MP summaries per pay period, built only from the Time Cards (same hours, overtime and paid hours). Destiny Crown Housekeeping agency staff are split by the venue where each shift was clocked IN (Saipan Vegas = MP Holdings, Club 88 = Mariana Entertainment); everyone else follows their Default venue.</p>
+        <div class="grid">
+          <div><label for="psPeriod">Pay period</label><select id="psPeriod"><option value="previous">Previous pay period</option><option value="current">Current pay period</option></select></div>
+          <div><label for="psWhich">Report</label><select id="psWhich" onchange="showPayrollReport_()">
+            <option value="ALL">All 4 summaries</option><option value="ME">ME — Mariana Entertainment</option><option value="ME-HK">ME Housekeeping</option>
+            <option value="MP">MP — MP Holdings</option><option value="MP-HK">MP Housekeeping</option></select></div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="run(this, loadPayrollSummary)">Load summary</button>
+          <button class="btn btn-secondary" id="psPrint" onclick="printPayrollSummary()" disabled>Print</button>
+          <button class="btn btn-secondary" id="psCsv" onclick="csvPayrollSummary()" disabled>Download CSV</button>
+          <button class="btn btn-secondary" id="psSetBtn" onclick="toggleReportSettings_()">Report Settings</button>
+        </div>
+        <div id="psMsg" class="msg" style="white-space:pre-line"></div>
+        <div id="psRecon" class="ps-recon" hidden></div>
+        <div id="psSettings" class="ps-settings" hidden>
+          <h3>Report Settings <span class="sub">(Full Admin only; saved with an audit log entry)</span></h3>
+          <div class="grid">
+            <div><label for="rsDepts">Split departments (comma separated)</label><input id="rsDepts" maxlength="300"></div>
+            <div><label for="rsStatus">…only for Employment Status</label><select id="rsStatus"><option value="">(any status)</option><option>Regular</option><option>Probationary</option><option>Part-Time</option><option>Agency Staff</option></select></div>
+            <div class="full"><label for="rsGroups">Summary groups — one per line: Department = Group name (optional)</label><textarea id="rsGroups" rows="4" maxlength="3000" placeholder="Gaming Operations = Gameroom"></textarea></div>
+            <div><label for="rsMPm">MP — Manager Signature</label><input id="rsMPm" maxlength="80"></div>
+            <div><label for="rsMEm">ME — Manager Signature</label><input id="rsMEm" maxlength="80"></div>
+            <div><label for="rsMPr">MP — Reviewed By</label><input id="rsMPr" maxlength="80"></div>
+            <div><label for="rsMEr">ME — Reviewed By</label><input id="rsMEr" maxlength="80"></div>
+            <div><label for="rsMPa">MP — Approved By</label><input id="rsMPa" maxlength="80"></div>
+            <div><label for="rsMEa">ME — Approved By</label><input id="rsMEa" maxlength="80"></div>
+          </div>
+          <div class="actions"><button class="btn btn-primary" id="rsSave" onclick="run(this, saveReportSettings_)">Save Report Settings</button></div>
+          <div id="rsMsg" class="msg"></div>
+        </div>
       </div>
       <div class="block no-print" id="archPanel" hidden>
         <h2>Archived Time Cards</h2>
@@ -759,7 +845,9 @@
             </div>
             <div class="tc-row" style="justify-content:space-between;margin-top:12px">
               <div><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:0"><input type="checkbox" id="tcPhotos" onchange="togglePhotoPages('reportOut', this.checked)" style="width:auto"> Include punch photos</label><span class="sub no-print" data-photo-status="reportOut" role="status" aria-live="polite" style="margin-left:8px;font-size:12px" hidden></span>
-                <div class="sub" id="tcPhotosNote" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div></div>
+                <div class="sub" id="tcPhotosNote" style="margin:2px 0 0 22px;font-size:12px">Show employee photos on the report.</div>
+                <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:8px 0 0"><input type="checkbox" id="tcByCompany" onchange="tcByCompanyChanged_()" style="width:auto"> Housekeeping agency: one card per company (MP / ME)</label>
+                <div class="sub" style="margin:2px 0 0 22px;font-size:12px">Split by the venue where each shift was clocked IN. Same hours as the normal card.</div></div>
               <div style="text-align:right"><button class="btn btn-reset btn-sm" id="repReset" onclick="resetTcEmployeeFilters_()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reset Employee Filters</button>
                 <div class="sub" style="margin:4px 0 0;font-size:11px">(clear employee, position, venue and photo option)</div></div>
             </div>
@@ -787,6 +875,7 @@
             <div class="tc-row">
               <button class="btn btn-primary" id="tcShowBtn" onclick="run(this, loadReport).then(updateStep3_)" disabled>Show time cards</button>
               <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
+              <button class="btn btn-secondary" id="otFormBtn" onclick="run(this, showOtForms_)" title="Overtime Work Authorization forms for the time cards shown (only employees with overtime)">OT forms</button>
               <p class="tc-tip"><b>Tip:</b> To print a complete Time Card, search for the employee by name or ID. If you select a Position and Venue, only the first page of each employee’s Time Card will be printed.</p>
             </div>
           </div></div>
@@ -796,6 +885,8 @@
       </div>
       <div id="reportOut"></div>
       <div id="archOut" hidden></div>
+      <div id="sumOut" hidden></div>
+      <div id="otOut" hidden></div>
     </section>
 
     <!-- ================= EMPLOYEES ================= -->
@@ -3007,11 +3098,12 @@ function setReportLoading(on) {
 const TC_SLICE = 40;
 function renderCards_(out, data, seq, done) {
   let i = 0;
+  LAST_TC_DATA = data; hideOtForms_(); // OTFORM: the OT forms follow the cards on screen
   out.classList.add('tc-drawing');
   (function slice() {
     if (seq !== REPORT_SEQ) return; // stopped: whoever replaced this run clears the cards (and tc-drawing)
     const frag = document.createDocumentFragment();
-    for (const end = Math.min(i + TC_SLICE, data.cards.length); i < end; i++) frag.appendChild(renderTimecard(data.cards[i], data.startDate, data.endDate));
+    for (const end = Math.min(i + TC_SLICE, data.cards.length); i < end; i++) frag.appendChild(renderTimecardOrSplit_(data.cards[i], data.startDate, data.endDate)); // HKCARD
     out.appendChild(frag);
     if (i < data.cards.length) setTimeout(slice, 0); else { out.classList.remove('tc-drawing'); applyTcFilters_(); done(); } // V79
   })();
@@ -3039,7 +3131,8 @@ function restoreReportState(showSaved) {
     REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not append to the saved cards
     const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
     out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79
-    data.cards.forEach(function (c) { out.appendChild(renderTimecard(c, data.startDate, data.endDate)); });
+    LAST_TC_DATA = data; // OTFORM
+    data.cards.forEach(function (c) { out.appendChild(renderTimecardOrSplit_(c, data.startDate, data.endDate)); }); // HKCARD
     applyTcFilters_(); // V79
     updateStep3_(); // V83
     setMsg('repMsg', true, 'Showing the time cards from ' + new Date(st.at).toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }) + ' — updating…');
@@ -4351,6 +4444,10 @@ function tcView(mode) {
   document.getElementById('livePanel').hidden = mode !== 'live';
   document.getElementById('archOut').hidden = mode !== 'arch';
   document.getElementById('reportOut').hidden = mode !== 'live';
+  document.getElementById('otOut').hidden = true; // OTFORM: back to the cards
+  document.getElementById('sumPanel').hidden = mode !== 'sum'; // PAYSUM
+  document.getElementById('sumOut').hidden = mode !== 'sum';
+  if (mode === 'sum') { loadReportSettings_(); return; }
   if (mode === 'arch') {
     const refresh = beginPhotoRefresh_('archOut', 'metadata');
     Promise.resolve(loadArchiveLists()).then(function () { finishPhotoRefresh_('archOut', refresh, true); },
@@ -4358,6 +4455,402 @@ function tcView(mode) {
   } else resumePhotoPages_('reportOut');
 }
 async function afterCardChange() { return ARCH.previewing ? previewCorrection() : loadReport(); }
+
+// ============================================================================
+// PAYSUM (V99-REPORTS): Payroll Summaries — a read-only regrouping of the Time Card results.
+// Nothing is recalculated: weekly Regular, OT, Leave (Sick + Vacation), Holiday, Other and Total come from
+// timecardReport. Split employees (Report Settings: department + employment status) are divided per shift by
+// the Clock-IN venue; everyone else goes to the company of the Default venue. Everything reconciles to the cards.
+// PAYSUM BEGIN (pure; tests/paysum.test.js extracts this block)
+const COMPANY_CODE_BY_VENUE = { 'VEN-SV': 'MP', 'VEN-C88': 'ME' };
+const PAYSUM_REPORTS = [
+  { key: 'ME', co: 'ME', hk: false, title: 'MARIANA ENTERTAINMENT TIMESHEET SUMMARY' },
+  { key: 'ME-HK', co: 'ME', hk: true, title: 'MARIANA ENTERTAINMENT TIMESHEET SUMMARY (Housekeeping)' },
+  { key: 'MP', co: 'MP', hk: false, title: 'MP HOLDINGS LLC TIMESHEET SUMMARY' },
+  { key: 'MP-HK', co: 'MP', hk: true, title: 'MP HOLDINGS LLC TIMESHEET SUMMARY (Housekeeping)' }
+];
+function psMin_(h) { return Math.round((Number(h) || 0) * 60); }
+function psHM_(min) { const m = Math.round(min || 0), s = m < 0 ? '-' : '', a = Math.abs(m); return s + Math.floor(a / 60) + ':' + String(a % 60).padStart(2, '0'); }
+function psWeekIdx_(date, periodStart) { // 0 = Week 1, 1 = Week 2 (Sunday–Saturday weeks from the period start)
+  const d = new Date(String(date).slice(0, 10) + 'T12:00:00+10:00'), s = new Date(String(periodStart).slice(0, 10) + 'T12:00:00+10:00');
+  return Math.floor(Math.round((d - s) / 86400000) / 7);
+}
+function psIsSplit_(card, emp, settings) {
+  const depts = ((settings && settings.splitDepts) || []).map(function (x) { return String(x).trim().toLowerCase(); });
+  const dept = String(card.department || (emp && emp.department) || '').trim().toLowerCase();
+  if (!dept || depts.indexOf(dept) === -1) return false;
+  return !settings.splitStatus || String((emp && emp.employmentStatus) || '') === settings.splitStatus;
+}
+function buildPayrollSummary_(cards, empIndex, settings, period) {
+  settings = settings || {};
+  const zero = function () { return { w: [0, 0], ot: 0, leave: 0, holiday: 0, other: 0, total: 0 }; };
+  const add = function (a, b) { a.w[0] += b.w[0]; a.w[1] += b.w[1]; a.ot += b.ot; a.leave += b.leave; a.holiday += b.holiday; a.other += b.other; a.total += b.total; };
+  const cols = function (v) { return v.w[0] + v.w[1] + v.ot + v.leave + v.holiday + v.other; };
+  const reports = {}; PAYSUM_REPORTS.forEach(function (r) { reports[r.key] = { def: r, rows: [], other: false }; });
+  const cardSum = zero(), repSum = zero(), unassigned = [], exceptions = [], incomplete = [], mismatch = [];
+  const groupOf = function (dept) { const m = settings.groupMap || {}; return m[dept] || dept || '(No department)'; };
+  (cards || []).forEach(function (c) {
+    const emp = (empIndex || {})[String(c.employeeId)] || null, pt = c.periodTotals || {};
+    const cv = zero();
+    cv.ot = psMin_(pt.overtime); cv.leave = psMin_(pt.sick) + psMin_(pt.vacation); cv.holiday = psMin_(pt.holiday); cv.other = psMin_(pt.other);
+    (c.weeks || []).forEach(function (w) { const i = psWeekIdx_(w.weekStart, period.start); if (i === 0 || i === 1) cv.w[i] += psMin_(w.regular); });
+    cv.total = psMin_(pt.payPeriodTotal);
+    add(cardSum, cv);
+    const inc = c.incomplete || {};
+    if (c.issues || inc.missingIn || inc.missingOut || inc.openShift) incomplete.push({ id: String(c.employeeId), name: c.name });
+    const dept = c.department || (emp && emp.department) || '';
+    const base = { id: String(c.employeeId), name: c.name, dept: dept, group: groupOf(dept) };
+    const parts = [], mine = [];
+    const splitDept = ((settings.splitDepts || []).map(function (x) { return String(x).trim().toLowerCase(); })).indexOf(String(dept).trim().toLowerCase()) !== -1;
+    if (splitDept && !emp) { // cannot tell the Employment Status: never guess the company
+      mine.push({ list: exceptions, why: "employee details not found (cannot decide the company split)", min: cv.total });
+    } else if (psIsSplit_(c, emp, settings)) {
+      const by = {};
+      (c.rows || []).forEach(function (r) {
+        const co = COMPANY_CODE_BY_VENUE[r.venueId] || '', reg = psMin_(r.regular), ot = psMin_(r.overtime);
+        if (!reg && !ot) return;
+        const i = psWeekIdx_(r.date, period.start);
+        if (!co || (i !== 0 && i !== 1)) { mine.push({ list: unassigned, why: !co ? 'shift without a venue (' + r.date + ')' : 'shift outside the pay period weeks (' + r.date + ')', min: reg + ot }); return; }
+        const v = by[co] = by[co] || zero(); v.w[i] += reg; v.ot += ot; v.total += reg + ot;
+      });
+      const paidMin = cv.leave + cv.holiday + cv.other;
+      if (paidMin) mine.push({ list: exceptions, why: 'paid hours on a split (agency) employee — not assigned to a company', min: paidMin });
+      ['MP', 'ME'].forEach(function (co) { if (by[co]) parts.push({ key: co + '-HK', v: by[co] }); });
+    } else {
+      const co = COMPANY_CODE_BY_VENUE[c.defaultVenueId || (emp && emp.defaultVenueId)] || '';
+      if (!co) mine.push({ list: unassigned, why: 'no Default venue (Saipan Vegas / Club 88)', min: cv.total });
+      else { const v = zero(); add(v, cv); parts.push({ key: co, v: v }); }
+    }
+    mine.forEach(function (x) { x.list.push({ id: base.id, name: c.name, why: x.why, min: x.min }); });
+    let got = 0;
+    parts.forEach(function (p) {
+      const rep = reports[p.key]; rep.rows.push(Object.assign({}, base, { v: p.v })); if (p.v.other) rep.other = true; add(repSum, p.v); got += p.v.total;
+      if (cols(p.v) !== p.v.total) mismatch.push({ id: base.id, name: c.name, why: 'columns do not add up to Total on ' + p.key });
+    });
+    const expl = mine.reduce(function (a, x) { return a + x.min; }, 0);
+    if (got + expl !== cv.total) mismatch.push({ id: base.id, name: c.name, why: 'summary ' + psHM_(got) + ' + not assigned ' + psHM_(expl) + ' ≠ time card ' + psHM_(cv.total) });
+  });
+  PAYSUM_REPORTS.forEach(function (d) {
+    const rep = reports[d.key], groups = {};
+    rep.rows.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+    rep.rows.forEach(function (r) { (groups[r.group] = groups[r.group] || []).push(r); });
+    rep.groups = Object.keys(groups).sort().map(function (g) { const sub = zero(); groups[g].forEach(function (r) { add(sub, r.v); }); return { name: g, rows: groups[g], sub: sub }; });
+    rep.grand = zero(); rep.rows.forEach(function (r) { add(rep.grand, r.v); });
+  });
+  const notAssigned = unassigned.concat(exceptions).reduce(function (a, x) { return a + x.min; }, 0);
+  const ok = !mismatch.length && repSum.total + notAssigned === cardSum.total && !unassigned.length && !exceptions.length;
+  return { period: period, reports: reports, cardSum: cardSum, repSum: repSum, unassigned: unassigned, exceptions: exceptions, incomplete: incomplete, mismatch: mismatch, notAssigned: notAssigned, ok: ok, cards: (cards || []).length };
+}
+// PAYSUM END
+
+// ============================================================================
+// HKCARD (V99-REPORTS Phase 2): company-specific Time Cards for split (Housekeeping agency) employees.
+// A company card = the SAME card rows, only the shifts clocked IN at that company's venue; Regular / OT are the
+// card's own per-shift values (combined weekly OT unchanged). Read-only: corrections stay on the normal card.
+// HKCARD BEGIN (pure; tests/paysum.test.js extracts this block)
+const COMPANY_DBA = { MP: 'MP Holdings LLC dba Saipan Vegas', ME: 'Mariana Entertainment dba Club 88' };
+const COMPANY_VENUE_NAME = { MP: 'Saipan Vegas', ME: 'Club 88' };
+function hkWeekStart_(date) { // Sunday of that week (Saipan calendar date)
+  const d = new Date(String(date).slice(0, 10) + 'T12:00:00+10:00');
+  return new Date(d.getTime() - d.getUTCDay() * 86400000).toISOString().slice(0, 10);
+}
+function companyCard_(c, co) {
+  const m = function (h) { return Math.round((Number(h) || 0) * 60); };
+  const rows = (c.rows || []).filter(function (r) { return COMPANY_CODE_BY_VENUE[r.venueId] === co; });
+  const wk = {};
+  let reg = 0, ot = 0, tot = 0;
+  rows.forEach(function (r) {
+    const w = wk[hkWeekStart_(r.date)] = wk[hkWeekStart_(r.date)] || { weekStart: hkWeekStart_(r.date), t: 0, r: 0, o: 0 };
+    w.t += m(r.hours); w.r += m(r.regular); w.o += m(r.overtime); tot += m(r.hours); reg += m(r.regular); ot += m(r.overtime);
+  });
+  const weeks = Object.keys(wk).sort().map(function (k) { const w = wk[k]; return { weekStart: w.weekStart, total: w.t / 60, regular: w.r / 60, overtime: w.o / 60 }; });
+  const flags = function (f) { return rows.filter(function (r) { return r.flag === f; }).length; };
+  return Object.assign({}, c, {
+    rows: rows, weeks: weeks, totals: { total: tot / 60, regular: reg / 60, overtime: ot / 60 },
+    periodTotals: { regular: reg / 60, overtime: ot / 60, sick: 0, vacation: 0, holiday: 0, other: 0, unpaid: 0, payPeriodTotal: (reg + ot) / 60 },
+    paid: [], corrections: [], correctionHistory: [],
+    incomplete: { missingOut: flags('MISSING_OUT'), missingIn: flags('MISSING_IN'), open: flags('OPEN') },
+    _company: co, _combinedWeeks: c.weeks || []
+  });
+}
+// The cards to print for one employee: [] = print the normal card (not split, or nothing to split, or paid hours present).
+function companyCardsFor_(c) {
+  const paid = (c.paid || []).filter(function (p) { return p.type !== 'UNPAID'; });
+  if (paid.length) return [];
+  return ['MP', 'ME'].map(function (co) { return companyCard_(c, co); }).filter(function (x) { return x.rows.length; });
+}
+// HKCARD END
+
+function tcSplitEmployee_(c) {
+  const box = document.getElementById('tcByCompany');
+  if (!box || !box.checked) return false;
+  const e = EMPLOYEES.find(function (x) { return x.employeeId === String(c.employeeId); });
+  return psIsSplit_(c, e, REPORT_SETTINGS || { splitDepts: ['Housekeeping'], splitStatus: 'Agency Staff' });
+}
+function renderTimecardOrSplit_(c, startDate, endDate) {
+  if (!tcSplitEmployee_(c)) return renderTimecard(c, startDate, endDate);
+  const parts = companyCardsFor_(c);
+  if (!parts.length) {
+    const card = renderTimecard(c, startDate, endDate);
+    if ((c.paid || []).some(function (p) { return p.type !== 'UNPAID'; })) card.insertBefore(el('div', { className: 'tc-incomplete no-print',
+      text: '⚠ Paid hours on a split (agency) employee — company cards not made; printed as one card. Please check.' }), card.firstChild.nextSibling);
+    return card;
+  }
+  const mins = function (h) { return Math.round((Number(h) || 0) * 60); };
+  const sum = parts.reduce(function (a, p) { return a + mins(p.periodTotals.payPeriodTotal); }, 0), full = mins((c.periodTotals || {}).payPeriodTotal);
+  const check = parts.map(function (p) { return p._company + ' ' + hm(p.periodTotals.payPeriodTotal); }).join(' + ') + ' = ' + psHM_(sum) + (sum === full ? ' = card ' + psHM_(full) + ' ✓' : ' ≠ card ' + psHM_(full) + ' — do not use; print the normal card');
+  const combined = (c.weeks || []).map(function (w) { return 'week of ' + shortDate(w.weekStart) + ' ' + hm(w.total); }).join(', ');
+  const frag = document.createDocumentFragment();
+  parts.forEach(function (dc) {
+    const card = renderTimecard(dc, startDate, endDate);
+    card.classList.add('tc-company-card'); card.dataset.company = dc._company;
+    const t = card.querySelector('.tc-company'); if (t) t.textContent = COMPANY_DBA[dc._company];
+    card.querySelectorAll('button').forEach(function (b) { b.remove(); }); // read-only: corrections are made on the normal card
+    const p2 = card.querySelector('.tc-page2'); if (p2) p2.remove();   // the correction log stays with the normal card
+    const info = card.querySelector('.tc-info');
+    info.parentNode.insertBefore(el('div', { className: 'tc-cobox', text: 'Company card: only shifts clocked IN at ' + COMPANY_VENUE_NAME[dc._company] +
+      '. Overtime is the same weekly overtime as the full time card (combined hours of both companies' + (combined ? ': ' + combined : '') + ').' }), info.nextSibling);
+    card.appendChild(el('div', { className: 'tc-legend no-print', style: 'color:' + (sum === full ? '#15803d' : '#b91c1c'), text: 'Check (not printed): ' + check }));
+    frag.appendChild(card);
+  });
+  return frag;
+}
+// ============================================================================
+// OTFORM v2 (V99-REPORTS Phase 3, owner design 11/20): Overtime Work Authorization = the full Sun–Sat workweeks.
+// Read-only: every value comes from the Time Card result (actual In/Out, Worked = net hours after the existing
+// rounding + break, OT = the card's weekly overtime). No day is ever labelled OFF (there are no schedules).
+// Destiny Crown Housekeeping agency staff (Report Settings rule: department + employment status) get NO OT form —
+// this exclusion is for the OT form only (Time Cards and payroll are unchanged).
+// OTFORM BEGIN (pure; tests/paysum.test.js extracts this block)
+const OT_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function otAddDays_(d, n) { return new Date(new Date(d + 'T12:00:00+10:00').getTime() + n * 86400000).toISOString().slice(0, 10); }
+function otFormFor_(c, period) {
+  const m = function (h) { return Math.round((Number(h) || 0) * 60); };
+  const byDay = {}; (c.rows || []).forEach(function (r) { (byDay[r.date] = byDay[r.date] || []).push(r); });
+  const paidBy = {}; (c.paid || []).forEach(function (p) { if (p.type !== 'UNPAID') (paidBy[p.date] = paidBy[p.date] || []).push({ type: p.type, min: Math.round(Number(p.minutes) || 0) }); });
+  const wk = {}; (c.weeks || []).forEach(function (w) { wk[w.weekStart] = w; });
+  const weeks = [];
+  for (let s = period.start; s <= period.end; s = otAddDays_(s, 7)) {
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = otAddDays_(s, i); if (d > period.end) break;
+      days.push({ date: d, day: OT_DAY_NAMES[i], paid: paidBy[d] || [], lines: (byDay[d] || []).map(function (r) {
+        return { timeIn: r.timeIn || '', timeOut: r.timeOut || '', flag: r.flag || '', worked: r.flag ? 0 : m(r.hours), ot: r.flag ? 0 : m(r.overtime),
+          breakMin: Math.round(Number(r.breakMinutes) || 0), waived: !!r.breakWaived };
+      }) });
+    }
+    const w = wk[s] || { total: 0, regular: 0, overtime: 0 };
+    const lineSum = function (f) { return days.reduce(function (a, d) { return a + d.lines.reduce(function (b, l) { return b + l[f]; }, 0); }, 0); };
+    weeks.push({ start: s, end: days.length ? days[days.length - 1].date : s, days: days, worked: m(w.total), regular: m(w.regular), ot: m(w.overtime), linesWorked: lineSum('worked'), linesOt: lineSum('ot') });
+  }
+  const pt = c.periodTotals || {};
+  const tot = { worked: weeks.reduce(function (a, w) { return a + w.worked; }, 0), regular: m(pt.regular), ot: m(pt.overtime) };
+  const ok = weeks.every(function (w) { return w.linesWorked === w.worked && w.linesOt === w.ot; }) && weeks.reduce(function (a, w) { return a + w.ot; }, 0) === tot.ot;
+  const inc = c.incomplete || {};
+  return { co: COMPANY_CODE_BY_VENUE[c.defaultVenueId] || '', employeeId: String(c.employeeId), name: c.name, department: c.department,
+    weeks: weeks, totals: tot, ok: ok, incomplete: !!(inc.missingOut || inc.missingIn || inc.open) };
+}
+// mode 'ot' = employees with calculated payroll overtime (default); 'all' = every card shown. Agency (split) staff never.
+function otFormsFor_(cards, isAgency, period, mode) {
+  return (cards || []).filter(function (c) {
+    if (isAgency(c)) return false;
+    return mode === 'all' || Math.round((Number((c.periodTotals || {}).overtime) || 0) * 60) > 0;
+  }).map(function (c) { return otFormFor_(c, period); });
+}
+// OTFORM END
+let LAST_TC_DATA = null, OT_MODE = 'ot';
+function hideOtForms_() {
+  const o = document.getElementById('otOut'); if (o) { o.hidden = true; o.innerHTML = ''; }
+  const r = document.getElementById('reportOut'); if (r && tcMode === 'live') r.hidden = false;
+}
+async function showOtForms_() {
+  const shown = Array.prototype.slice.call(document.querySelectorAll('#reportOut .timecard:not([hidden])'));
+  if (!LAST_TC_DATA || !shown.length) { setMsg('repMsg', false, 'Show the time cards first (Step 3), then click OT forms.'); return; }
+  if (!REPORT_SETTINGS) await loadReportSettings_();
+  const ids = new Set(shown.map(function (n) { return String(n._tc && n._tc.c ? n._tc.c.employeeId : ''); }));
+  const cards = LAST_TC_DATA.cards.filter(function (c) { return ids.has(String(c.employeeId)); });
+  const period = { start: LAST_TC_DATA.startDate, end: LAST_TC_DATA.endDate };
+  const isAgency = function (c) { return psIsSplit_(c, EMPLOYEES.find(function (e) { return e.employeeId === String(c.employeeId); }), REPORT_SETTINGS); };
+  const agency = cards.filter(isAgency).length;
+  const forms = otFormsFor_(cards, isAgency, period, OT_MODE);
+  const out = document.getElementById('otOut'); out.innerHTML = '';
+  const sel = el('select', { id: 'otMode' }, [el('option', { value: 'ot', text: 'Employees with overtime' }), el('option', { value: 'all', text: 'All employees shown' })]);
+  sel.value = OT_MODE; sel.onchange = function () { OT_MODE = sel.value; showOtForms_(); };
+  out.appendChild(el('div', { className: 'ot-bar no-print' }, [
+    el('button', { className: 'btn btn-primary', text: 'Print OT forms', onclick: function () { window.print(); } }),
+    el('button', { className: 'btn btn-secondary', text: 'Back to time cards', onclick: hideOtForms_ }), sel,
+    el('span', { className: 'ot-chip', role: 'status', text: '📅 ' + forms.length + (forms.length === 1 ? ' Form' : ' Forms') + ' · ' + otRangeLabel_(period) }),
+    agency ? el('div', { className: 'ot-barnote', text: agency + ' Destiny Crown agency employee(s) not included (no OT form needed).' }) : null]));
+  if (!forms.length) out.appendChild(el('p', { className: 'sub', text: OT_MODE === 'ot' ? 'No overtime on the time cards shown.' : 'No time cards to print.' }));
+  forms.forEach(function (f) { out.appendChild(renderOtForm_(f, period)); });
+  document.getElementById('reportOut').hidden = true; out.hidden = false; out.scrollIntoView();
+}
+function otRangeLabel_(p) { // "Nov 1 – Nov 14, 2026"
+  const f = function (d, y) { return dtf_('en-US', Object.assign({ timeZone: TZ, month: 'short', day: 'numeric' }, y ? { year: 'numeric' } : {})).format(new Date(d + 'T12:00:00+10:00')); };
+  return f(p.start, false) + ' – ' + f(p.end, true);
+}
+function renderOtForm_(f, period) {
+  const sg = ((REPORT_SETTINGS || {}).signers || {})[f.co] || {};
+  const md = function (d) { return dtf_('en-US', { timeZone: TZ, month: 'numeric', day: 'numeric' }).format(new Date(d + 'T12:00:00+10:00')); };
+  const nd = function (iso, d) { return iso && saipanDate(new Date(iso)) !== d ? ' (next day)' : ''; };
+  const PL = { HOLIDAY: 'Paid Holiday', SICK: 'Paid Sick leave', VACATION: 'Paid Vacation leave', OTHER: 'Other paid hours' };
+  const box = el('div', { className: 'ot-form' }, [
+    el('div', { className: 'ot-co', text: COMPANY_DBA[f.co] || COMPANY_NAME }),
+    el('div', { className: 'ot-title', text: 'OVERTIME WORK AUTHORIZATION' }),
+    el('div', { className: 'ot-who' }, [el('div', { text: 'Employee: ' + f.name + ' (ID ' + f.employeeId + ')' + (f.department ? ' · ' + f.department : '') }),
+      el('div', { text: 'Pay Period: ' + shortDate(period.start) + ' – ' + shortDate(period.end) })])]);
+  if (f.incomplete) box.appendChild(el('div', { className: 'tc-incomplete', text: '⚠ INCOMPLETE — missing clock-in / clock-out on the Time Card. Hours below are not final.' }));
+  const table = el('table', { className: 'ot-week' }), tb = el('tbody');
+  table.appendChild(el('thead', {}, [el('tr', {}, ['Date', 'Day', 'Time In', 'Time Out', 'Worked Hours', 'OT Hours', 'Reason for OT / Remarks'].map(function (h, i) { return el('th', { className: i >= 4 && i <= 5 ? 'num' : '', text: h }); }))]));
+  f.weeks.forEach(function (w, wi) {
+    tb.appendChild(el('tr', { className: 'ot-wk' }, [el('td', { colspan: '7', text: 'Week ' + (wi + 1) + ': ' + OT_DAY_NAMES[0] + ', ' + md(w.start) + ' – ' + OT_DAY_NAMES[6] + ', ' + md(w.end) })]));
+    w.days.forEach(function (d) {
+      const paid = d.paid.map(function (p) { return (PL[p.type] || p.type) + ' ' + psHM_(p.min) + ' (not worked)'; }).join('; ');
+      const lines = d.lines.length ? d.lines : [null];
+      lines.forEach(function (l, i) {
+        const first = i === 0;
+        const inC = l ? saipanTimeOnly(l.timeIn) : '—';
+        const outC = l ? (l.flag === 'MISSING_OUT' ? 'MISSING' : l.flag === 'OPEN' ? 'still in' : saipanTimeOnly(l.timeOut) + nd(l.timeOut, d.date)) : '—';
+        const worked = el('td', { className: 'num' }, [el('div', { text: l && !l.flag ? psHM_(l.worked) : '' })]);
+        if (l && !l.flag && l.waived) worked.appendChild(el('div', { className: 'ot-small', text: 'No break taken' }));
+        else if (l && !l.flag && l.breakMin > 0) worked.appendChild(el('div', { className: 'ot-small', text: 'Break: ' + l.breakMin + ' min' }));
+        const dayCell = el('td', {}, [el('div', { text: first ? d.day : '' })]);
+        if (first && paid) dayCell.appendChild(el('div', { className: 'ot-small', text: paid }));
+        tb.appendChild(el('tr', { className: (l && l.ot ? 'ot-has ' : '') + (l ? '' : 'ot-none') }, [
+          el('td', { text: first ? md(d.date) : '' }), dayCell, el('td', { text: l && l.flag === 'MISSING_IN' ? 'MISSING' : inC }), el('td', { text: outC }), worked,
+          el('td', { className: 'num' + (l && l.ot ? ' ot-val' : ''), text: l && l.ot ? psHM_(l.ot) : (l && !l.flag ? '0:00' : '') }), el('td', { className: 'reason', text: '' })]));
+      });
+    });
+    tb.appendChild(el('tr', { className: 'ot-sub' }, [el('td', { colspan: '4', text: 'Week ' + (wi + 1) + ' total — Regular ' + psHM_(w.regular) }), el('td', { className: 'num', text: psHM_(w.worked) }), el('td', { className: 'num', text: psHM_(w.ot) }), el('td', { text: '' })]));
+  });
+  tb.appendChild(el('tr', { className: 'ot-total' }, [el('td', { colspan: '4', text: 'PAY PERIOD TOTAL — Regular ' + psHM_(f.totals.regular) }), el('td', { className: 'num', text: psHM_(f.totals.worked) }), el('td', { className: 'num', text: psHM_(f.totals.ot) }), el('td', { text: '' })]));
+  table.appendChild(tb); box.appendChild(table);
+  box.appendChild(el('div', { className: 'ot-note', text: 'Overtime (OT) = hours worked over 40 in a workweek (Sunday–Saturday), as on the Time Card. Worked Hours are after the Time Rules rounding and break deduction. An overnight shift is listed on its Time-In date. A day without punches shows "—" (no schedule is recorded). Paid leave / holiday is shown for information only and is not in Worked or OT hours.' }));
+  box.appendChild(el('div', { className: 'ot-sign' }, [el('div', { text: 'Reviewed By' + (sg.reviewedBy ? ': ' + sg.reviewedBy : '') }), el('div', { text: 'Approved By' + (sg.approvedBy ? ': ' + sg.approvedBy : '') })]));
+  if (!f.ok) box.appendChild(el('div', { className: 'tc-incomplete no-print', text: '⚠ Check (not printed): the form does not match the Time Card totals — do not use this form; print the Time Card.' }));
+  return box;
+}
+
+async function tcByCompanyChanged_() {
+  if (document.getElementById('tcByCompany').checked && !REPORT_SETTINGS) await loadReportSettings_();
+  if (document.querySelectorAll('#reportOut .timecard').length) return loadReport();
+}
+
+let PAYSUM = null, REPORT_SETTINGS = null;
+function psDateLabel_(d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Pacific/Saipan' }); }
+function psAddDays_(d, n) { return new Date(new Date(d + 'T12:00:00+10:00').getTime() + n * 86400000).toISOString().slice(0, 10); }
+async function loadReportSettings_() {
+  document.getElementById('psSetBtn').hidden = isLimited_();
+  if (isLimited_()) document.getElementById('psSettings').hidden = true;
+  const r = await call('getReportSettings', {});
+  REPORT_SETTINGS = r.ok ? r.data : { splitDepts: ['Housekeeping'], splitStatus: 'Agency Staff', groupMap: {}, signers: {} };
+  if (!r.ok) setMsg('psMsg', false, 'Report Settings could not be read (' + r.error.message + '). Using the defaults: split Housekeeping + Agency Staff.');
+  fillReportSettings_();
+}
+function fillReportSettings_() {
+  const s = REPORT_SETTINGS || {}, sg = s.signers || {}, mp = sg.MP || {}, me = sg.ME || {};
+  rsDepts.value = (s.splitDepts || []).join(', '); rsStatus.value = s.splitStatus || '';
+  rsGroups.value = Object.keys(s.groupMap || {}).map(function (k) { return k + ' = ' + s.groupMap[k]; }).join('\n');
+  rsMPm.value = mp.manager || ''; rsMPr.value = mp.reviewedBy || ''; rsMPa.value = mp.approvedBy || '';
+  rsMEm.value = me.manager || ''; rsMEr.value = me.reviewedBy || ''; rsMEa.value = me.approvedBy || '';
+}
+function toggleReportSettings_() { if (isLimited_()) return; const b = document.getElementById('psSettings'); b.hidden = !b.hidden; if (!b.hidden) fillReportSettings_(); }
+async function saveReportSettings_() {
+  if (isLimited_()) return;
+  const groupMap = {};
+  const bad = rsGroups.value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).filter(function (l) {
+    const i = l.indexOf('='); if (i < 1) return true; const k = l.slice(0, i).trim(), v = l.slice(i + 1).trim(); if (!k || !v) return true; groupMap[k] = v; return false; });
+  if (bad.length) { setMsg('rsMsg', false, 'Each Summary group line must look like: Department = Group name\nCheck: ' + bad.join(' | ')); return; }
+  const payload = { splitDepts: rsDepts.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean), splitStatus: rsStatus.value, groupMap: groupMap,
+    signers: { MP: { manager: rsMPm.value, reviewedBy: rsMPr.value, approvedBy: rsMPa.value }, ME: { manager: rsMEm.value, reviewedBy: rsMEr.value, approvedBy: rsMEa.value } } };
+  const r = await call('saveReportSettings', payload);
+  if (!r.ok) { setMsg('rsMsg', false, r.error.message); return; }
+  REPORT_SETTINGS = r.data; fillReportSettings_();
+  setMsg('rsMsg', true, r.data.changed && r.data.changed.length ? 'Saved (' + r.data.changed.length + ' setting(s) changed, recorded in the Audit Log). Load the summary again to use them.' : 'No changes.');
+}
+async function loadPayrollSummary() {
+  if (!SERVER_PERIODS) { setMsg('psMsg', false, 'Pay periods are still loading. Try again in a moment.'); return; }
+  if (!REPORT_SETTINGS) await loadReportSettings_();
+  const p = SERVER_PERIODS[psPeriod.value];
+  // fresh list incl. inactive + archived employees (their Employment Status decides the split); the page list is not changed
+  const er = await call('listEmployees', { includeInactive: true, includeArchived: true });
+  if (!er.ok) { setMsg('psMsg', false, er.error.message); return; }
+  setMsg('psMsg', true, 'Loading the time cards for ' + shortDate(p.start) + ' – ' + shortDate(p.end) + '…');
+  const r = await call('timecardReport', { startDate: p.start, endDate: p.end, employeeId: '' });
+  if (!r.ok) { setMsg('psMsg', false, r.error.message); return; }
+  const idx = {}; er.data.forEach(function (e) { idx[String(e.employeeId)] = e; });
+  PAYSUM = buildPayrollSummary_(r.data.cards, idx, REPORT_SETTINGS, { start: p.start, end: p.end });
+  renderPayrollSummary_();
+  setMsg('psMsg', true, 'Summary ready: ' + PAYSUM.cards + ' time card(s), ' + shortDate(p.start) + ' – ' + shortDate(p.end) + '.' +
+    (PAYSUM.incomplete.length ? '\n⚠ ' + PAYSUM.incomplete.length + ' time card(s) are incomplete (missing clock-in/out) — the summary is NOT final until they are fixed.' : ''));
+  psPrint.disabled = false; psCsv.disabled = false;
+}
+function psCells_(v, other) {
+  const a = [psHM_(v.w[0]), psHM_(v.w[1]), psHM_(v.ot), psHM_(v.leave), psHM_(v.holiday)];
+  if (other) a.push(psHM_(v.other));
+  a.push(psHM_(v.total)); return a;
+}
+function renderPayrollSummary_() {
+  const S = PAYSUM, out = document.getElementById('sumOut'); out.innerHTML = '';
+  const w1 = psDateLabel_(S.period.start) + ' – ' + psDateLabel_(psAddDays_(S.period.start, 6)), w2 = psDateLabel_(psAddDays_(S.period.start, 7)) + ' – ' + psDateLabel_(S.period.end);
+  PAYSUM_REPORTS.forEach(function (d) {
+    const rep = S.reports[d.key], sg = ((REPORT_SETTINGS || {}).signers || {})[d.co] || {};
+    const head = ['Employee', 'Week 1 (' + w1 + ')', 'Week 2 (' + w2 + ')', 'OT', 'Leave', 'Holiday'].concat(rep.other ? ['Other'] : []).concat(['Total']);
+    const box = el('div', { className: 'ps-report', 'data-key': d.key }, [
+      el('h3', { text: d.title }),
+      el('div', { className: 'ps-period', text: 'Payroll Period: ' + shortDate(S.period.start) + ' – ' + shortDate(S.period.end) })]);
+    if (!rep.rows.length) box.appendChild(el('p', { className: 'ps-empty', text: 'No hours for this report in this pay period.' }));
+    else {
+      const t = el('table', {}, [el('thead', {}, [el('tr', {}, head.map(function (h) { return el('th', { text: h }); }))])]), tb = el('tbody');
+      rep.groups.forEach(function (g) {
+        tb.appendChild(el('tr', { className: 'ps-group' }, [el('td', { colspan: String(head.length), text: g.name })]));
+        g.rows.forEach(function (r) { tb.appendChild(el('tr', {}, [el('td', { text: r.name + ' (' + r.id + ')' })].concat(psCells_(r.v, rep.other).map(function (x) { return el('td', { text: x }); })))); });
+        tb.appendChild(el('tr', { className: 'ps-sub' }, [el('td', { text: 'Total — ' + g.name })].concat(psCells_(g.sub, rep.other).map(function (x) { return el('td', { text: x }); }))));
+      });
+      tb.appendChild(el('tr', { className: 'ps-grand' }, [el('td', { text: 'GRAND TOTAL' })].concat(psCells_(rep.grand, rep.other).map(function (x) { return el('td', { text: x }); }))));
+      t.appendChild(tb); box.appendChild(t);
+    }
+    box.appendChild(el('div', { className: 'ps-sign' }, [
+      el('div', { text: 'Manager Signature' + (sg.manager ? ': ' + sg.manager : '') }), el('div', { text: 'Approved By' + (sg.approvedBy ? ': ' + sg.approvedBy : '') })]));
+    out.appendChild(box);
+  });
+  // Reconciliation (screen only)
+  const rc = document.getElementById('psRecon'); rc.hidden = false; rc.className = 'ps-recon ' + (S.ok ? 'ok' : 'bad'); rc.innerHTML = '';
+  const line = function (label, a, b) { return el('tr', {}, [el('td', { text: label }), el('td', { text: psHM_(a) }), el('td', { text: psHM_(b) }), el('td', { text: a === b ? '✓' : '≠' })]); };
+  rc.appendChild(el('b', { text: S.ok ? '✓ Reconciled: the 4 summaries equal the Time Cards (' + S.cards + ' cards).' : '⚠ Check needed: the summaries do not fully match the Time Cards — see below.' }));
+  rc.appendChild(el('table', {}, [el('tr', {}, ['', 'Time Cards', '4 Summaries', ''].map(function (h) { return el('th', { text: h }); })),
+    line('Week 1 regular', S.cardSum.w[0], S.repSum.w[0]), line('Week 2 regular', S.cardSum.w[1], S.repSum.w[1]), line('Overtime', S.cardSum.ot, S.repSum.ot),
+    line('Leave', S.cardSum.leave, S.repSum.leave), line('Holiday', S.cardSum.holiday, S.repSum.holiday), line('Other', S.cardSum.other, S.repSum.other),
+    line('Total payable', S.cardSum.total, S.repSum.total + S.notAssigned)]));
+  const list = function (title, arr, fmt) { if (!arr.length) return; rc.appendChild(el('div', { text: title })); arr.forEach(function (x) { rc.appendChild(el('div', { text: '• ' + fmt(x) })); }); };
+  list('Not assigned to any summary (fix the venue / Default venue):', S.unassigned, function (x) { return x.name + ' (' + x.id + '): ' + x.why + ', ' + psHM_(x.min); });
+  list('Exceptions (not assigned):', S.exceptions, function (x) { return x.name + ' (' + x.id + '): ' + x.why + ', ' + psHM_(x.min); });
+  list('Do not match:', S.mismatch, function (x) { return x.name + ' (' + x.id + '): ' + x.why; });
+  list('Incomplete time cards (summary not final):', S.incomplete, function (x) { return x.name + ' (' + x.id + ')'; });
+  showPayrollReport_();
+}
+function showPayrollReport_() {
+  const k = document.getElementById('psWhich').value;
+  document.querySelectorAll('#sumOut .ps-report').forEach(function (b) { b.hidden = k !== 'ALL' && b.dataset.key !== k; });
+}
+async function printPayrollSummary() {
+  if (!PAYSUM) return;
+  if ((!PAYSUM.ok || PAYSUM.incomplete.length) && !await askConfirm('The summary is not final:\n' + (!PAYSUM.ok ? '• it does not fully reconcile with the Time Cards\n' : '') +
+    (PAYSUM.incomplete.length ? '• ' + PAYSUM.incomplete.length + ' time card(s) are incomplete\n' : '') + '\nPrint anyway?', 'Print anyway', 'Cancel')) return;
+  window.print();
+}
+function csvPayrollSummary() {
+  if (!PAYSUM) return;
+  const q = function (s) { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [['Report', 'Summary group', 'Employee ID', 'Employee', 'Week 1', 'Week 2', 'OT', 'Leave', 'Holiday', 'Other', 'Total'].join(',')];
+  PAYSUM_REPORTS.forEach(function (d) { PAYSUM.reports[d.key].groups.forEach(function (g) { g.rows.forEach(function (r) {
+    lines.push([d.key, g.name, r.id, r.name].concat(psCells_(r.v, true)).map(q).join(','));
+  }); }); });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv' }));
+  a.download = 'payroll-summary-' + PAYSUM.period.start + '-to-' + PAYSUM.period.end + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
 async function loadArchiveLists(preselectEmpId) {
   const [pe, ae] = await Promise.all([call('listArchivedPeriods', {}), call('listArchivedEmployees', {})]);
   if (pe.ok) ARCH.periods = pe.data;
