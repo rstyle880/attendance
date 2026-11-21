@@ -125,6 +125,23 @@
   .ot-form .ot-reason { font-size: 12px; color: #0f172a; white-space: normal; }
   .ot-form .ot-rbtn { margin-top: 2px; padding: 1px 8px; font-size: 11px; }
   @media print { .ot-form { border: none; margin: 0; padding: 0; page-break-after: always; break-after: page; } .ot-form:last-child { page-break-after: auto; break-after: auto; } }
+  /* UI 11/21: OT forms modal */
+  .ot-modal { position: fixed; inset: 0; z-index: 9000; background: rgba(15, 23, 42, .55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .ot-modal[hidden] { display: none; }
+  .ot-modal-box { background: #f8fafc; width: min(1100px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .ot-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 1px solid #e2e8f0; }
+  .ot-modal-head h3 { margin: 0; font-size: 16px; }
+  .ot-x { border: 0; background: transparent; font-size: 26px; line-height: 1; cursor: pointer; color: #475569; padding: 0 4px; }
+  #otOut { overflow-y: auto; padding: 4px 18px 18px; }
+  body.ot-open { overflow: hidden; }
+  @media (max-width: 640px) { .ot-modal { padding: 0; } .ot-modal-box { max-height: 100vh; height: 100vh; border-radius: 0; } }
+  @media print {
+    body.ot-open { overflow: visible; }
+    body.ot-open #reports > *:not(#otModal) { display: none !important; }
+    body.ot-open .ot-modal { position: static; display: block; background: none; padding: 0; }
+    body.ot-open .ot-modal-box { max-height: none; height: auto; width: auto; display: block; box-shadow: none; background: #fff; border-radius: 0; }
+    body.ot-open #otOut { overflow: visible; padding: 0; }
+  }
   .tc-cobox { margin: 6px 0 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; background: #f8fafc; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .msg:empty { display: none; }
   .msg.ok { background: #e6f4ea; color: #1e5e2c; }
@@ -781,7 +798,7 @@
         <h2>Payroll Summary</h2>
         <p class="sub">ME / MP summaries per pay period, built only from the Time Cards (same hours, overtime and paid hours). Destiny Crown Housekeeping agency staff are split by the venue where each shift was clocked IN (Saipan Vegas = MP Holdings, Club 88 = Mariana Entertainment); everyone else follows their Default venue.</p>
         <div class="grid">
-          <div><label for="psPeriod">Pay period</label><select id="psPeriod"><option value="previous">Previous pay period</option><option value="current">Current pay period</option></select></div>
+          <div><label for="psPeriod">Pay period</label><select id="psPeriod" onchange="clearPayrollSummary_()"><option value="previous">Previous pay period</option><option value="current">Current pay period</option></select></div>
           <div><label for="psWhich">Report</label><select id="psWhich" onchange="showPayrollReport_()">
             <option value="ALL">All 4 summaries</option><option value="ME">ME — Mariana Entertainment</option><option value="ME-HK">ME Housekeeping</option>
             <option value="MP">MP — MP Holdings</option><option value="MP-HK">MP Housekeeping</option></select></div>
@@ -790,7 +807,8 @@
           <button class="btn btn-primary" onclick="run(this, loadPayrollSummary)">Load summary</button>
           <button class="btn btn-secondary" id="psPrint" onclick="printPayrollSummary()" disabled>Print</button>
           <button class="btn btn-secondary" id="psCsv" onclick="csvPayrollSummary()" disabled>Download CSV</button>
-          <button class="btn btn-secondary" id="psSetBtn" onclick="toggleReportSettings_()">Report Settings</button>
+          <button class="btn btn-secondary" id="psClear" onclick="clearPayrollSummary_()" disabled title="Clear the loaded summary (filters and payroll data are not changed)">Clear</button>
+          <button class="btn btn-secondary" id="psSetBtn" onclick="toggleReportSettings_()" style="display:none">Report Settings</button>
         </div>
         <div id="psMsg" class="msg" style="white-space:pre-line"></div>
         <div id="psRecon" class="ps-recon" hidden></div>
@@ -877,7 +895,7 @@
             <div class="tc-row">
               <button class="btn btn-primary" id="tcShowBtn" onclick="run(this, loadReport).then(updateStep3_)" disabled>Show time cards</button>
               <button class="btn btn-secondary" id="printBtn" onclick="printTimecards()" disabled>Print</button>
-              <button class="btn btn-secondary" id="otFormBtn" onclick="run(this, showOtForms_)" title="Overtime Work Authorization forms for the time cards shown (only employees with overtime)">OT forms</button>
+              <button class="btn btn-secondary" id="otFormBtn" onclick="run(this, showOtForms_).then(updateStep3_)" disabled title="Overtime Work Authorization forms for the time cards shown (only employees with overtime)">OT forms</button>
               <p class="tc-tip"><b>Tip:</b> To print a complete Time Card, search for the employee by name or ID. If you select a Position and Venue, only the first page of each employee’s Time Card will be printed.</p>
             </div>
           </div></div>
@@ -888,7 +906,13 @@
       <div id="reportOut"></div>
       <div id="archOut" hidden></div>
       <div id="sumOut" hidden></div>
-      <div id="otOut" hidden></div>
+      <!-- UI 11/21: OT forms open in a centered modal (same forms; printing prints only the forms) -->
+      <div id="otModal" class="ot-modal" hidden role="dialog" aria-modal="true" aria-labelledby="otModalTitle" onclick="if (event.target === this) hideOtForms_()">
+        <div class="ot-modal-box">
+          <div class="ot-modal-head no-print"><h3 id="otModalTitle">Overtime Work Authorization</h3><button type="button" class="ot-x" id="otClose" aria-label="Close" onclick="hideOtForms_()">×</button></div>
+          <div id="otOut"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ================= EMPLOYEES ================= -->
@@ -2265,7 +2289,15 @@ function holNeedsReload_(loadedAt, lastSaveAt, now) {
 // Only the menu: the server refuses these actions for a Limited Admin as well.
 const LIMITED_TABS = ['terminals', 'rules', 'venues', 'admins'];
 function isLimited_() { try { return sessionStorage.getItem('admin_role') === 'Limited'; } catch (e) { return false; } }
+// UI 11/21d: Report Settings is for Full Admins only (screen); the server still refuses saves from anyone else.
+function isFullAdmin_() { try { return sessionStorage.getItem('admin_role') === 'Full'; } catch (e) { return false; } }
+function applyReportSettingsRole_() {
+  const full = isFullAdmin_(), b = document.getElementById('psSetBtn'), p = document.getElementById('psSettings');
+  if (b) b.style.display = full ? '' : 'none';
+  if (p && !full) p.hidden = true;
+}
 function applyRole_() {
+  applyReportSettingsRole_(); // UI 11/21d
   const limited = isLimited_();
   document.querySelectorAll('nav button[data-tab]').forEach(function (b) { b.style.display = limited && LIMITED_TABS.indexOf(b.dataset.tab) !== -1 ? 'none' : ''; });
   const rl = document.querySelector('.side-user .rl');
@@ -2273,7 +2305,7 @@ function applyRole_() {
 }
 function showTab(name, noLoad) {
   if (isLimited_() && LIMITED_TABS.indexOf(name) !== -1) name = 'dashboard';
-  if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); }
+  if (name !== currentTab) { cancelPhotoPages_('reportOut'); cancelPhotoPages_('archOut'); if (typeof hideOtForms_ === 'function') hideOtForms_(); } // UI 11/21: never leave the OT modal open on another menu
   try { sessionStorage.setItem('admin_tab', name); } catch (e) {}
   currentTab = name;
   document.querySelector('#appShell main').classList.toggle('wide', name === 'dashboard');
@@ -2986,15 +3018,23 @@ function tcReady_(empPicked, pos, venue) {
 }
 // Step 3 is always shown: Show time cards needs a valid choice; Print also needs a loaded report for that same choice.
 // Punch photos are for individual reports only (Position + Venue unchecks and disables them).
+// UI 11/21b: the selection a report was made for (employee, Position, Venue, pay period)
+function tcSelKey_() {
+  return [reportEmp ? reportEmp.employeeId : '', document.getElementById('repPos').value, document.getElementById('repVenue').value, repStart.value, repEnd.value].join('|');
+}
 function updateStep3_() {
   const pos = document.getElementById('repPos').value, venue = document.getElementById('repVenue').value, out = document.getElementById('reportOut');
   const ok = tcReady_(!!reportEmp, pos, venue);
   document.getElementById('tcStep3Hint').hidden = ok;
-  const show = document.getElementById('tcShowBtn');
-  if (!show.classList.contains('loading')) show.disabled = !ok;
+  const show = document.getElementById('tcShowBtn'), otb = document.getElementById('otFormBtn');
   const loaded = !!out.querySelector('.timecard') && !out.classList.contains('tc-drawing') && !out.classList.contains('tc-loading') &&
     (reportEmp ? out.dataset.emp === String(reportEmp.employeeId) : !out.dataset.emp);
+  // UI 11/21b: while either button (or the cards) is loading, the other button is off; Show is off when this selection is already shown
+  const busy = out.classList.contains('tc-loading') || out.classList.contains('tc-drawing') || show.classList.contains('loading') || !!(otb && otb.classList.contains('loading'));
+  const same = loaded && out.dataset.key === tcSelKey_() && !TC_DIRTY;
+  if (!show.classList.contains('loading')) show.disabled = !ok || same || busy;
   document.getElementById('printBtn').disabled = !ok || !loaded;
+  if (otb && !otb.classList.contains('loading')) otb.disabled = !ok || busy; // UI 11/21: same rule as Show time cards
   const filterMode = !reportEmp && !!(pos && venue), ph = document.getElementById('tcPhotos');
   if (filterMode && ph.checked) togglePhotoPages('reportOut', false);
   ph.disabled = filterMode;
@@ -3069,6 +3109,7 @@ async function loadReport(preloaded) { // V86 perf: preloaded = a refreshed indi
   document.getElementById('printBtn').disabled = true; // A1: Print comes on after the last slice
   LAST_REPORT_DATA = result.data; // V79: Edit Time rebuilds from this — set now, as a large result is still drawing when loadReport returns
   out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79: the filters apply only to an All-employees result
+  out.dataset.key = tcSelKey_(); // UI 11/21b
   renderCards_(out, result.data, seq, function () {
     updateStep3_(); // V83: Print only for a report matching the current choice
     saveReportState(result.data);
@@ -3089,8 +3130,10 @@ let REPORT_SEQ = 0;
 function setReportLoading(on) {
   const out = document.getElementById('reportOut'), btn = document.querySelector('#livePanel .btn-primary');
   out.classList.toggle('tc-loading', on);
-  btn.classList.toggle('loading', on); btn.disabled = on;
-  if (!on) return;
+  const otb = document.getElementById('otFormBtn'), viaOt = on && !!otb && otb.classList.contains('loading'); // UI 11/21b
+  btn.classList.toggle('loading', on && !viaOt); btn.disabled = on; // OT forms loading the cards: Show is only turned off (no spinner)
+  if (!on) { updateStep3_(); return; } // UI 11/21b: both buttons back to the Step 3 rule
+  if (otb && !viaOt) otb.disabled = true; // UI 11/21b: OT forms off (no spinner) while Show loads
   document.getElementById('printBtn').disabled = true;
   const m = document.getElementById('repMsg');
   if (/— updating…$/.test(m.textContent)) return; // saved cards just shown after F5: keep "Showing the time cards from …"
@@ -3133,6 +3176,7 @@ function restoreReportState(showSaved) {
     REPORT_SEQ++; setReportLoading(false); // A1 (V1) / TCNEWEST: an older request or slice run must not append to the saved cards
     const out = document.getElementById('reportOut'); out.innerHTML = ''; out.classList.remove('tc-drawing');
     out.dataset.emp = reportEmp ? reportEmp.employeeId : ''; // V79
+    out.dataset.key = tcSelKey_(); // UI 11/21b
     LAST_TC_DATA = data; // OTFORM
     data.cards.forEach(function (c) { out.appendChild(renderTimecardOrSplit_(c, data.startDate, data.endDate)); }); // HKCARD
     applyTcFilters_(); // V79
@@ -4446,7 +4490,7 @@ function tcView(mode) {
   document.getElementById('livePanel').hidden = mode !== 'live';
   document.getElementById('archOut').hidden = mode !== 'arch';
   document.getElementById('reportOut').hidden = mode !== 'live';
-  document.getElementById('otOut').hidden = true; // OTFORM: back to the cards
+  hideOtForms_(); // OTFORM: close the OT forms modal
   document.getElementById('sumPanel').hidden = mode !== 'sum'; // PAYSUM
   document.getElementById('sumOut').hidden = mode !== 'sum';
   if (mode === 'sum') { loadReportSettings_(); return; }
@@ -4662,12 +4706,24 @@ function otFormsFor_(cards, isAgency, period, mode) {
 // OTFORM END
 let LAST_TC_DATA = null, OT_MODE = 'ot';
 function hideOtForms_() {
-  const o = document.getElementById('otOut'); if (o) { o.hidden = true; o.innerHTML = ''; }
+  const m = document.getElementById('otModal'), wasOpen = m && !m.hidden;
+  const o = document.getElementById('otOut'); if (o) o.innerHTML = '';
+  if (m) m.hidden = true;
+  document.body.classList.remove('ot-open');
   const r = document.getElementById('reportOut'); if (r && tcMode === 'live') r.hidden = false;
+  if (wasOpen) { const b = document.getElementById('otFormBtn'); if (b && !b.disabled) b.focus(); }
 }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && document.body.classList.contains('ot-open')) hideOtForms_(); });
 async function showOtForms_() {
+  // UI 11/21: the cards for the current selection are loaded first when needed (same request as Show time cards)
+  if (document.getElementById('printBtn').disabled && !document.body.classList.contains('ot-open')) {
+    await loadReport();
+    const t0 = Date.now(), out0 = document.getElementById('reportOut');
+    while ((out0.classList.contains('tc-drawing') || out0.classList.contains('tc-loading')) && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 100); });
+    updateStep3_();
+  }
   const shown = Array.prototype.slice.call(document.querySelectorAll('#reportOut .timecard:not([hidden])'));
-  if (!LAST_TC_DATA || !shown.length) { setMsg('repMsg', false, 'Show the time cards first (Step 3), then click OT forms.'); return; }
+  if (!LAST_TC_DATA || !shown.length) { setMsg('repMsg', false, 'No time cards for this selection.'); return; }
   if (!REPORT_SETTINGS) await loadReportSettings_();
   const ids = new Set(shown.map(function (n) { return String(n._tc && n._tc.c ? n._tc.c.employeeId : ''); }));
   const cards = LAST_TC_DATA.cards.filter(function (c) { return ids.has(String(c.employeeId)); });
@@ -4683,12 +4739,14 @@ async function showOtForms_() {
   sel.value = OT_MODE; sel.onchange = function () { OT_MODE = sel.value; showOtForms_(); };
   out.appendChild(el('div', { className: 'ot-bar no-print' }, [
     el('button', { className: 'btn btn-primary', text: 'Print OT forms', onclick: function () { window.print(); } }),
-    el('button', { className: 'btn btn-secondary', text: 'Back to time cards', onclick: hideOtForms_ }), sel,
+    el('button', { className: 'btn btn-secondary', text: 'Close', onclick: hideOtForms_ }), sel,
     el('span', { className: 'ot-chip', role: 'status', text: '📅 ' + forms.length + (forms.length === 1 ? ' Form' : ' Forms') + ' · ' + otRangeLabel_(period) }),
     agency ? el('div', { className: 'ot-barnote', text: agency + ' Destiny Crown agency employee(s) not included (no OT form needed).' }) : null]));
   if (!forms.length) out.appendChild(el('p', { className: 'sub', text: OT_MODE === 'ot' ? 'No overtime on the time cards shown.' : 'No time cards to print.' }));
   forms.forEach(function (f) { out.appendChild(renderOtForm_(f, period)); });
-  document.getElementById('reportOut').hidden = true; out.hidden = false; out.scrollIntoView();
+  const m = document.getElementById('otModal'), firstOpen = m.hidden;
+  m.hidden = false; document.body.classList.add('ot-open');
+  if (firstOpen) { out.scrollTop = 0; document.getElementById('otClose').focus(); }
 }
 function otRangeLabel_(p) { // "Nov 1 – Nov 14, 2026"
   const f = function (d, y) { return dtf_('en-US', Object.assign({ timeZone: TZ, month: 'short', day: 'numeric' }, y ? { year: 'numeric' } : {})).format(new Date(d + 'T12:00:00+10:00')); };
@@ -4775,8 +4833,7 @@ let PAYSUM = null, REPORT_SETTINGS = null;
 function psDateLabel_(d) { return new Date(d + 'T12:00:00+10:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'Pacific/Saipan' }); }
 function psAddDays_(d, n) { return new Date(new Date(d + 'T12:00:00+10:00').getTime() + n * 86400000).toISOString().slice(0, 10); }
 async function loadReportSettings_() {
-  document.getElementById('psSetBtn').hidden = isLimited_();
-  if (isLimited_()) document.getElementById('psSettings').hidden = true;
+  applyReportSettingsRole_(); // UI 11/21d
   const r = await call('getReportSettings', {});
   REPORT_SETTINGS = r.ok ? r.data : { splitDepts: ['Housekeeping'], splitStatus: 'Agency Staff', groupMap: {}, signers: {} };
   if (!r.ok) setMsg('psMsg', false, 'Report Settings could not be read (' + r.error.message + '). Using the defaults: split Housekeeping + Agency Staff.');
@@ -4789,9 +4846,9 @@ function fillReportSettings_() {
   rsMPm.value = mp.manager || ''; rsMPr.value = mp.reviewedBy || ''; rsMPa.value = mp.approvedBy || '';
   rsMEm.value = me.manager || ''; rsMEr.value = me.reviewedBy || ''; rsMEa.value = me.approvedBy || '';
 }
-function toggleReportSettings_() { if (isLimited_()) return; const b = document.getElementById('psSettings'); b.hidden = !b.hidden; if (!b.hidden) fillReportSettings_(); }
+function toggleReportSettings_() { if (!isFullAdmin_()) return; const b = document.getElementById('psSettings'); b.hidden = !b.hidden; if (!b.hidden) fillReportSettings_(); }
 async function saveReportSettings_() {
-  if (isLimited_()) return;
+  if (!isFullAdmin_()) return;
   const groupMap = {};
   const bad = rsGroups.value.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).filter(function (l) {
     const i = l.indexOf('='); if (i < 1) return true; const k = l.slice(0, i).trim(), v = l.slice(i + 1).trim(); if (!k || !v) return true; groupMap[k] = v; return false; });
@@ -4818,7 +4875,7 @@ async function loadPayrollSummary() {
   renderPayrollSummary_();
   setMsg('psMsg', true, 'Summary ready: ' + PAYSUM.cards + ' time card(s), ' + shortDate(p.start) + ' – ' + shortDate(p.end) + '.' +
     (PAYSUM.incomplete.length ? '\n⚠ ' + PAYSUM.incomplete.length + ' time card(s) are incomplete (missing clock-in/out) — the summary is NOT final until they are fixed.' : ''));
-  psPrint.disabled = false; psCsv.disabled = false;
+  psPrint.disabled = false; psCsv.disabled = false; psClear.disabled = false; // UI 11/21c: Clear only with a loaded summary
 }
 function psCells_(v, other) {
   const a = [psHM_(v.w[0]), psHM_(v.w[1]), psHM_(v.ot), psHM_(v.leave), psHM_(v.holiday)];
@@ -4863,6 +4920,14 @@ function renderPayrollSummary_() {
   list('Do not match:', S.mismatch, function (x) { return x.name + ' (' + x.id + '): ' + x.why; });
   list('Incomplete time cards (summary not final):', S.incomplete, function (x) { return x.name + ' (' + x.id + ')'; });
   showPayrollReport_();
+}
+// UI 11/21: Clear = remove the loaded summary + reconciliation only (filters, settings and payroll data untouched).
+function clearPayrollSummary_() {
+  PAYSUM = null;
+  document.getElementById('sumOut').innerHTML = '';
+  const rc = document.getElementById('psRecon'); rc.hidden = true; rc.innerHTML = '';
+  clearMsg('psMsg');
+  document.getElementById('psPrint').disabled = true; document.getElementById('psCsv').disabled = true; document.getElementById('psClear').disabled = true;
 }
 function showPayrollReport_() {
   const k = document.getElementById('psWhich').value;
